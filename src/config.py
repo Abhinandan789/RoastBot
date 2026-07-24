@@ -9,13 +9,13 @@ module should call os.environ directly.
 import os
 from dotenv import load_dotenv
 
-load_dotenv()  # loads .env file if present in repo root; no-op if absent
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(dotenv_path=os.path.join(_BASE_DIR, ".env"))  # no-op if absent
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 GITHUB_USERNAME = os.environ.get("GITHUB_USERNAME")
 
-_BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(_BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "roastbot.db")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")

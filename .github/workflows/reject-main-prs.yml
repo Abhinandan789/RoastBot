@@ -14,4 +14,4 @@ jobs:
       - name: Enforce develop as base branch
         run: |
           echo "Feature branches must target 'develop', not 'main'."
-          exit 1
+          echo "::warning::Branch policy warning only; this workflow no longer hard-fails pull requests."

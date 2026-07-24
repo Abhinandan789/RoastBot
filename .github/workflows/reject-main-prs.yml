@@ -1,0 +1,15 @@
+name: Reject PRs to main
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  reject:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce develop as base branch
+        run: |
+          echo "Feature branches must target 'develop', not 'main'."
+          exit 1

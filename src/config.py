@@ -36,5 +36,5 @@ def validate_config():
     if missing:
         raise EnvironmentError(
             f"Missing required environment variables: {', '.join(missing)}. "
-            f"Copy .env.example to .env and fill in real values."
+            f"Set them in your environment or copy .env.example to .env and fill in real values."
         )

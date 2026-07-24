@@ -15,18 +15,15 @@ from src.config import DB_PATH, DATA_DIR
 def init_db():
     """Create the roasts table if it doesn't already exist. Safe to call every run."""
     os.makedirs(DATA_DIR, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS roasts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            mood TEXT NOT NULL,
-            roast_text TEXT NOT NULL,
-            created_at TEXT NOT NULL
-        )
-    """)
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS roasts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                mood TEXT NOT NULL,
+                roast_text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+        """)
 
 
 def save_roast(mood, roast_text):

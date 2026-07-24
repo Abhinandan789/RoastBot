@@ -28,14 +28,12 @@ def init_db():
 
 def save_roast(mood, roast_text):
     """Insert a new roast record."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO roasts (mood, roast_text, created_at) VALUES (?, ?, ?)",
-        (mood, roast_text, datetime.now(timezone.utc).isoformat())
-    )
-    conn.commit()
-    conn.close()
+    init_db()
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute(
+            "INSERT INTO roasts (mood, roast_text, created_at) VALUES (?, ?, ?)",
+            (mood, roast_text, datetime.now(timezone.utc).isoformat()),
+        )
 
 
 def get_recent_roasts(limit=5):

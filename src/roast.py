@@ -98,11 +98,14 @@ def get_roast(mood, context, history):
 
 
 def send_notification(text):
-    subprocess.run(
-        ["termux-notification", "--title", "Roast Bot", "--content", text],
-        check=False
-    )
-
+    try:
+        subprocess.run(
+            ["termux-notification", "--title", "Roast Bot", "--content", text],
+            check=False
+        )
+    except FileNotFoundError:
+        # termux-notification only exists on Termux; safe to skip elsewhere
+        print("(notification skipped - not running on Termux)")
 
 def main():
     validate_config()

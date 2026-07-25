@@ -7,6 +7,7 @@ and the Groq API call, then delivers the result as a Termux notification.
 
 import os
 import json
+import subprocess
 import requests
 from datetime import datetime, timezone
 
@@ -97,9 +98,10 @@ def get_roast(mood, context, history):
 
 
 def send_notification(text):
-    safe_text = text.replace('"', "'")
-    os.system(f'termux-notification --title "Roast Bot" --content "{safe_text}"')
-
+    subprocess.run(
+        ["termux-notification", "--title", "Roast Bot", "--content", text],
+        check=False
+    )
 
 def main():
     validate_config()

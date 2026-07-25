@@ -16,4 +16,4 @@ fi
 
 cd "$PROJECT_DIR"
 mkdir -p data
-python src/roast.py >> data/roastbot.log 2>&1
+python -m src.roast >> data/roastbot.log 2>&1

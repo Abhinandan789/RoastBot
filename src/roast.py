@@ -103,6 +103,7 @@ def send_notification(text):
         check=False
     )
 
+
 def main():
     validate_config()
     init_db()

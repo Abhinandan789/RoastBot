@@ -38,12 +38,11 @@ def save_roast(mood, roast_text):
 
 def get_recent_roasts(limit=5):
     """Return the most recent `limit` roast texts, newest first."""
-    conn = sqlite3.connect(DB_PATH)
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT roast_text FROM roasts ORDER BY id DESC LIMIT ?",
-        (limit,)
-    )
-    rows = cur.fetchall()
-    conn.close()
-    return [row[0] for row in rows]
+    init_db()
+    limit = max(0, int(limit))
+    with sqlite3.connect(DB_PATH) as conn:
+        cur = conn.execute(
+            "SELECT roast_text FROM roasts ORDER BY id DESC LIMIT ?",
+            (limit,),
+        )
+        return [row[0] for row in cur.fetchall()]

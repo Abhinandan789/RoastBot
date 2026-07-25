@@ -26,10 +26,13 @@ def detect_mood(commits, prs, last_activity_iso):
     if last_activity_iso is None:
         return "idle"
 
-    last_activity = datetime.fromisoformat(last_activity_iso)
+    try:
+        normalized = last_activity_iso.replace("Z", "+00:00")
+        last_activity = datetime.fromisoformat(normalized)
+    except (TypeError, ValueError):
+        return "idle"
     if last_activity.tzinfo is None:
         last_activity = last_activity.replace(tzinfo=timezone.utc)
-
     days_since = (datetime.now(timezone.utc) - last_activity).days
 
     if days_since >= 3:

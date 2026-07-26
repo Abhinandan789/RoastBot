@@ -10,6 +10,7 @@ import os
 import json
 import subprocess
 import requests
+import tempfile
 from datetime import datetime, timezone, date
 
 from src.config import (
@@ -127,6 +128,7 @@ def write_pet_snapshot(mood, tone_bucket, respect, roast_text):
     only writer, the widget never writes back to this file.
     """
     os.makedirs(DATA_DIR, exist_ok=True)
+
     snapshot = {
         "mood": mood,
         "tone_bucket": tone_bucket,
@@ -134,8 +136,20 @@ def write_pet_snapshot(mood, tone_bucket, respect, roast_text):
         "latest_roast": roast_text,
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
-    with open(PET_STATE_FILE, "w") as f:
-        json.dump(snapshot, f)
+
+    fd, temp_path = tempfile.mkstemp(dir=DATA_DIR)
+
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(snapshot, f)
+            f.flush()
+            os.fsync(f.fileno())
+
+        os.replace(temp_path, PET_STATE_FILE)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
 
 
 def main():

@@ -165,7 +165,7 @@ def draw_mood(canvas, mood, tick, tone_bucket="neutral"):
 def draw_speech_bubble(canvas, text):
     """Draw a speech bubble above the pet with the given text (wrapped)."""
     canvas.delete("bubble")
-    bubble_top = CENTER_Y - BASE_RADIUS - 55
+    bubble_top = max(5, CENTER_Y - BASE_RADIUS - 55)
     canvas.create_rectangle(
         10, bubble_top, CANVAS_SIZE - 10, bubble_top + 45,
         fill="white", outline="black", width=2, tags="bubble"

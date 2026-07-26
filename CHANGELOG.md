@@ -3,10 +3,11 @@
 - Added SQLite-backed roast history (prevents repeated jokes)
 - Added mood detection (happy/angry/sick/idle) based on GitHub activity recency
 - Refactored monolithic script into src/config.py, src/db.py, src/mood.py, src/roast.py
-## v1.1.0
-- Added desktop pet widget (Windows/laptop only): floating always-on-top
-  Tkinter window with mood-based animations, auto-popup speech bubble on
-  new roasts, and click-to-view roast history panel
-- Integrated Respect tone bucket into the roast prompt (warm/neutral/
-  cynical/checked_out affects tone)
-- Added pet_state.json snapshot mechanism for widget/backend communication
+## v2.0.0
+- Desktop pet widget: floating always-on-top window with mood animations,
+  auto-popup speech bubble (in its own independent Toplevel), and
+  click-to-view roast history panel
+- Note: history panel (originally scoped as a separate Stage 4) was
+  implemented together with Stage 3's bubble rework, since both touched
+  pet_widget.py in the same session - no separate PR exists for it,
+  intentionally, to avoid a no-op PR

@@ -5,3 +5,4 @@ data/state.json
 __pycache__/
 *.pyc
 .venv/
+data/pet_state.json

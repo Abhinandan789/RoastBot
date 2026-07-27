@@ -6,12 +6,15 @@ draw_idle/draw_happy/draw_angry/draw_sick(canvas, tick, tone_bucket),
 then adding it to PET_REGISTRY below.
 """
 
-from src.pets import smiley, droplet, cat
+from src.pets import smiley, droplet, cat, robot, ghost, smiley2
 
 PET_REGISTRY = {
     "smiley": smiley,
     "droplet": droplet,
     "cat": cat,
+    "robot": robot,
+    "ghost": ghost,
+    "smiley2": smiley2
 }
 
 DEFAULT_PET = "droplet"

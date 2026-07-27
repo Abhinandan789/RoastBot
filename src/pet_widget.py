@@ -198,20 +198,25 @@ class PetWidget:
         self.bubble_hide_job = None
 
     def _on_press(self, event):
-        self._drag_start_x = event.x
-        self._drag_start_y = event.y
+        self._press_x_root = event.x_root
+        self._press_y_root = event.y_root
+
+        self._start_win_x = self.root.winfo_x()
+        self._start_win_y = self.root.winfo_y()
+
         self._drag_moved = False
 
-    def _on_drag(self, event):
-        dx = event.x - self._drag_start_x
-        dy = event.y - self._drag_start_y
 
-        if abs(dx) > 3 or abs(dy) > 3:
+    def _on_drag(self, event):
+        dx = event.x_root - self._press_x_root
+        dy = event.y_root - self._press_y_root
+
+        if dx * dx + dy * dy > 9:      # 3px threshold
             self._drag_moved = True
 
-        new_x = self.root.winfo_x() + dx
-        new_y = self.root.winfo_y() + dy
-        self.root.geometry(f"+{new_x}+{new_y}")
+        self.root.geometry(
+            f"+{self._start_win_x + dx}+{self._start_win_y + dy}"
+        )
 
         if self.bubble.toplevel is not None and self.bubble.toplevel.winfo_viewable():
             self.bubble._reposition_to_parent()

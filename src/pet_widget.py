@@ -130,6 +130,7 @@ class PetWidget:
         self._drag_start_x = 0
         self._drag_start_y = 0
         self._drag_moved = False
+        self._history_panel = None
 
         self._setup_window()
         self._setup_canvas()
@@ -226,10 +227,16 @@ class PetWidget:
         self.root.destroy()
 
     def _open_history_panel(self):
+        if self._history_panel is not None and self._history_panel.winfo_exists():
+            self._history_panel.lift()
+            self._history_panel.focus_force()
+            return
+
         panel = tk.Toplevel(self.root)
         panel.title("Roast History")
         panel.geometry("340x420")
         panel.attributes("-topmost", True)
+        panel.protocol("WM_DELETE_WINDOW", lambda: self._close_history_panel(panel))
 
         frame = tk.Frame(panel)
         frame.pack(fill="both", expand=True, padx=8, pady=8)
@@ -251,10 +258,16 @@ class PetWidget:
             for i, roast_text in enumerate(recent, start=1):
                 text_widget.insert("end", f"{i}. {roast_text}\n\n")
 
-        text_widget.config(state="disabled")  # read-only after populating
+        text_widget.config(state="disabled")
 
-        close_btn = tk.Button(panel, text="Close", command=panel.destroy)
+        close_btn = tk.Button(panel, text="Close", command=lambda: self._close_history_panel(panel))
         close_btn.pack(pady=6)
+
+        self._history_panel = panel
+
+    def _close_history_panel(self, panel):
+        panel.destroy()
+        self._history_panel = None
 
 
 def main():

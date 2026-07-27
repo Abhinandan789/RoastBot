@@ -27,10 +27,27 @@ from src.pet_animations import (
     CANVAS_SIZE, TRANSPARENT_KEY
 )
 from src.db import get_recent_roasts
+from src.config import PET_STATE_FILE, PET_POSITION_FILE
 
 POLL_INTERVAL_MS = 4000
 ANIMATION_INTERVAL_MS = 33
 BUBBLE_DURATION_MS = 12000
+
+def load_pet_position():
+    if os.path.exists(PET_POSITION_FILE):
+        try:
+            with open(PET_POSITION_FILE) as f:
+                pos = json.load(f)
+                return pos.get("x", 100), pos.get("y", 200)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return 100, 200  # default, matches original hardcoded position
+
+
+def save_pet_position(x, y):
+    os.makedirs(os.path.dirname(PET_POSITION_FILE), exist_ok=True)
+    with open(PET_POSITION_FILE, "w") as f:
+        json.dump({"x": x, "y": y}, f)
 
 
 class BubbleWindow:
@@ -80,6 +97,15 @@ class BubbleWindow:
         y = py - height + 15
         self.toplevel.geometry(f"{width}x{height}+{x}+{y}")
 
+    def _reposition_to_parent(self):
+        """Reposition the bubble to follow the parent window without
+        redrawing its contents - used while the parent is being dragged."""
+        if self.toplevel is None:
+            return
+        width = self.toplevel.winfo_width()
+        height = self.toplevel.winfo_height()
+        self._position(width, height)
+
     def hide(self):
         if self.toplevel is not None:
             self.toplevel.withdraw()
@@ -101,6 +127,10 @@ class PetWidget:
         self.bubble_hide_job = None
 
         self.bubble = BubbleWindow(self.root)
+        self._drag_start_x = 0
+        self._drag_start_y = 0
+        self._drag_moved = False
+        self._history_panel = None
 
         self._setup_window()
         self._setup_canvas()
@@ -111,7 +141,8 @@ class PetWidget:
     def _setup_window(self):
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
-        self.root.geometry(f"{CANVAS_SIZE}x{CANVAS_SIZE}+100+200")
+        x, y = load_pet_position()
+        self.root.geometry(f"{CANVAS_SIZE}x{CANVAS_SIZE}+{x}+{y}")
         try:
             self.root.attributes("-transparentcolor", TRANSPARENT_KEY)
         except tk.TclError:
@@ -124,7 +155,9 @@ class PetWidget:
             bg=TRANSPARENT_KEY, highlightthickness=0
         )
         self.canvas.pack()
-        self.canvas.bind("<Button-1>", self._on_click)
+        self.canvas.bind("<ButtonPress-1>", self._on_press)
+        self.canvas.bind("<B1-Motion>", self._on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self._on_release)
 
     def _animation_loop(self):
         draw_mood(self.canvas, self.current_mood, self.tick, self.current_tone)
@@ -164,18 +197,51 @@ class PetWidget:
         self.bubble.hide()
         self.bubble_hide_job = None
 
-    def _on_click(self, event):
-        self._open_history_panel()
+    def _on_press(self, event):
+        self._press_x_root = event.x_root
+        self._press_y_root = event.y_root
+
+        self._start_win_x = self.root.winfo_x()
+        self._start_win_y = self.root.winfo_y()
+
+        self._drag_moved = False
+
+
+    def _on_drag(self, event):
+        dx = event.x_root - self._press_x_root
+        dy = event.y_root - self._press_y_root
+
+        if dx * dx + dy * dy > 9:      # 3px threshold
+            self._drag_moved = True
+
+        self.root.geometry(
+            f"+{self._start_win_x + dx}+{self._start_win_y + dy}"
+        )
+
+        if self.bubble.toplevel is not None and self.bubble.toplevel.winfo_viewable():
+            self.bubble._reposition_to_parent()
+
+    def _on_release(self, event):
+        if not self._drag_moved:
+            self._open_history_panel()
+        else:
+            save_pet_position(self.root.winfo_x(), self.root.winfo_y())
 
     def _on_close(self):
         self.bubble.destroy()
         self.root.destroy()
 
     def _open_history_panel(self):
+        if self._history_panel is not None and self._history_panel.winfo_exists():
+            self._history_panel.lift()
+            self._history_panel.focus_force()
+            return
+
         panel = tk.Toplevel(self.root)
         panel.title("Roast History")
         panel.geometry("340x420")
         panel.attributes("-topmost", True)
+        panel.protocol("WM_DELETE_WINDOW", lambda: self._close_history_panel(panel))
 
         frame = tk.Frame(panel)
         frame.pack(fill="both", expand=True, padx=8, pady=8)
@@ -197,10 +263,16 @@ class PetWidget:
             for i, roast_text in enumerate(recent, start=1):
                 text_widget.insert("end", f"{i}. {roast_text}\n\n")
 
-        text_widget.config(state="disabled")  # read-only after populating
+        text_widget.config(state="disabled")
 
-        close_btn = tk.Button(panel, text="Close", command=panel.destroy)
+        close_btn = tk.Button(panel, text="Close", command=lambda: self._close_history_panel(panel))
         close_btn.pack(pady=6)
+
+        self._history_panel = panel
+
+    def _close_history_panel(self, panel):
+        panel.destroy()
+        self._history_panel = None
 
 
 def main():

@@ -66,17 +66,32 @@ def get_github_activity(since_iso):
     events = resp.json()
 
     commits, prs = [], []
+    push_event_count = 0
     latest_ts = None
 
     for e in events:
         if since_iso and e["created_at"] <= since_iso:
             continue
         latest_ts = e["created_at"] if latest_ts is None else max(latest_ts, e["created_at"])
+
         if e["type"] == "PushEvent":
+            push_event_count += 1
             for c in e["payload"].get("commits", []):
-                commits.append(c.get("message", ""))
+                msg = c.get("message", "")
+                if msg:
+                    commits.append(msg)
+
         elif e["type"] == "PullRequestEvent":
-            prs.append(e["payload"]["pull_request"].get("title", ""))
+            action = e["payload"].get("action", "")
+            title = e["payload"].get("pull_request", {}).get("title", "")
+            if title and action in ("opened", "closed"):
+                prs.append(title)
+
+    # Fallback: if we saw push activity but no commit messages made it
+    # through (e.g. merge pushes with distinct_size 0), still treat this
+    # as real activity so a busy PR-based day isn't misread as silence.
+    if not commits and not prs and push_event_count > 0:
+        commits.append(f"{push_event_count} push event(s) detected (merge/PR-based activity)")
 
     return commits, prs, latest_ts
 

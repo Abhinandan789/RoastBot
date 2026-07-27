@@ -7,3 +7,5 @@ __pycache__/
 .venv/
 data/pet_state.json
 data/pet_position.json
+data/goals.json
+data/goal_progress.json

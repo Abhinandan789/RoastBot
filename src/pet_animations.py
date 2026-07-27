@@ -45,121 +45,23 @@ MOOD_FILL_COLORS = {
 def get_tone_color(tone_bucket):
     return TONE_COLORS.get(tone_bucket, TONE_COLORS["neutral"])
 
+from src.pets.registry import get_active_pet_module
+from src.config import ACTIVE_PET
 
-def _clear(canvas):
-    canvas.delete("pet")
+_active_module = get_active_pet_module(ACTIVE_PET)
 
-
-def draw_idle(canvas, tick, tone_bucket="neutral"):
-    _clear(canvas)
-    bob_offset = math.sin(tick / 10) * 3
-    y = CENTER_Y + bob_offset
-    border_color = get_tone_color(tone_bucket)
-
-    canvas.create_oval(
-        CENTER_X - BASE_RADIUS, y - BASE_RADIUS,
-        CENTER_X + BASE_RADIUS, y + BASE_RADIUS,
-        fill=MOOD_FILL_COLORS["idle"], outline=border_color, width=3,
-        tags="pet"
-    )
-
-    blink = (tick % 60) < 4
-    eye_h = 3 if blink else 8
-    for dx in (-15, 15):
-        canvas.create_oval(
-            CENTER_X + dx - 4, y - 9 - eye_h // 2,
-            CENTER_X + dx + 4, y - 9 + eye_h // 2,
-            fill="black", tags="pet"
-        )
-
-
-def draw_happy(canvas, tick, tone_bucket="neutral"):
-    _clear(canvas)
-    bounce = abs(math.sin(tick / 6)) * 10
-    y = CENTER_Y - bounce
-    border_color = get_tone_color(tone_bucket)
-
-    canvas.create_oval(
-        CENTER_X - BASE_RADIUS, y - BASE_RADIUS,
-        CENTER_X + BASE_RADIUS, y + BASE_RADIUS,
-        fill=MOOD_FILL_COLORS["happy"], outline=border_color, width=3,
-        tags="pet"
-    )
-    for dx in (-15, 15):
-        canvas.create_oval(
-            CENTER_X + dx - 4, y - 13, CENTER_X + dx + 4, y - 5,
-            fill="black", tags="pet"
-        )
-    canvas.create_arc(
-        CENTER_X - 15, y - 5, CENTER_X + 15, y + 15,
-        start=200, extent=140, style="arc", width=3, tags="pet"
-    )
-
-
-def draw_angry(canvas, tick, tone_bucket="neutral"):
-    _clear(canvas)
-    shake = math.sin(tick / 2) * 4
-    x = CENTER_X + shake
-    y = CENTER_Y
-    border_color = get_tone_color(tone_bucket)
-
-    canvas.create_oval(
-        x - BASE_RADIUS, y - BASE_RADIUS,
-        x + BASE_RADIUS, y + BASE_RADIUS,
-        fill=MOOD_FILL_COLORS["angry"], outline=border_color, width=3,
-        tags="pet"
-    )
-    for dx in (-15, 15):
-        canvas.create_oval(
-            x + dx - 4, y - 9, x + dx + 4, y - 1,
-            fill="black", tags="pet"
-        )
-        brow_dir = 1 if dx < 0 else -1
-        canvas.create_line(
-            x + dx - 8, y - 15, x + dx + 8, y - 15 + (4 * brow_dir),
-            width=2, fill="black", tags="pet"
-        )
-    canvas.create_line(
-        x - 12, y + 12, x + 12, y + 8,
-        width=3, fill="black", tags="pet"
-    )
-
-
-def draw_sick(canvas, tick, tone_bucket="neutral"):
-    _clear(canvas)
-    sway = math.sin(tick / 20) * 5
-    x = CENTER_X + sway
-    y = CENTER_Y + 5
-    border_color = get_tone_color(tone_bucket)
-
-    canvas.create_oval(
-        x - BASE_RADIUS, y - BASE_RADIUS,
-        x + BASE_RADIUS, y + BASE_RADIUS,
-        fill=MOOD_FILL_COLORS["sick"], outline=border_color, width=3,
-        tags="pet"
-    )
-    for dx in (-15, 15):
-        canvas.create_line(
-            x + dx - 5, y - 7, x + dx + 5, y - 7,
-            width=3, fill="black", tags="pet"
-        )
-    canvas.create_line(
-        x - 10, y + 14, x + 10, y + 14,
-        width=2, fill="black", tags="pet"
-    )
-
-
-MOOD_DRAW_FUNCTIONS = {
-    "happy": draw_happy,
-    "angry": draw_angry,
-    "sick": draw_sick,
-    "idle": draw_idle,
-}
+CANVAS_SIZE = getattr(_active_module, "CANVAS_SIZE", 220)
 
 
 def draw_mood(canvas, mood, tick, tone_bucket="neutral"):
-    draw_fn = MOOD_DRAW_FUNCTIONS.get(mood, draw_idle)
-    draw_fn(canvas, tick, tone_bucket)
+    tone_color = get_tone_color(tone_bucket)
+    draw_fn = {
+        "happy": _active_module.draw_happy,
+        "angry": _active_module.draw_angry,
+        "sick": _active_module.draw_sick,
+        "idle": _active_module.draw_idle,
+    }.get(mood, _active_module.draw_idle)
+    draw_fn(canvas, tick, tone_color)
 
 
 # ---------------------------------------------------------------------

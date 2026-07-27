@@ -11,3 +11,13 @@
   implemented together with Stage 3's bubble rework, since both touched
   pet_widget.py in the same session - no separate PR exists for it,
   intentionally, to avoid a no-op PR
+
+## v2.2.0
+- Added multi-source activity tracking: GitHub (existing) + LeetCode (new)
+- Added ActivityAnalyzer: commit quality scoring, vampire-coder and
+  weekend-warrior pattern detection (timezone-correct), LeetCode
+  difficulty balance
+- Added optional goal tracking (daily/weekly targets) with idempotent
+  event-based progress counting
+- roast.py and mood.py extended in place to use the new multi-source
+  pipeline - no parallel/forked files introduced

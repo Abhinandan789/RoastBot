@@ -24,6 +24,8 @@ PET_POSITION_FILE = os.path.join(DATA_DIR, "pet_position.json")
 ACTIVE_PET = os.environ.get("ACTIVE_PET", "cat")
 LEETCODE_USERNAME = os.environ.get("LEETCODE_USERNAME")
 
+LOCAL_TIMEZONE_OFFSET_HOURS = int(os.environ.get("LOCAL_TIMEZONE_OFFSET_HOURS", "5"))
+
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"
 

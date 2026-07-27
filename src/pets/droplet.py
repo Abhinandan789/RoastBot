@@ -1,23 +1,26 @@
-"""droplet.py - A rounded droplet-shaped pet, procedurally drawn.
-
-Body is a teardrop silhouette (built from an oval + a triangular top)
-rather than a plain circle - visually closer to the blue-droplet style
-without needing any image assets.
-"""
+"""droplet.py - Glossy teardrop pet with depth, feet, and mood effects."""
 
 import math
 
 CANVAS_SIZE = 220
 CENTER_X = CANVAS_SIZE // 2
 CENTER_Y = CANVAS_SIZE // 2
-BODY_WIDTH = 70
-BODY_HEIGHT = 80
 
-MOOD_FILL_COLORS = {
+BODY_W = 74
+BODY_H = 88
+
+MOOD_FILL = {
+    "idle":  "#8FD3E8",
     "happy": "#7EC8E3",
     "angry": "#E38B7E",
-    "sick": "#9BB89B",
-    "idle": "#8FD3E8"
+    "sick":  "#9BB89B",
+}
+
+MOOD_GLOW = {
+    "idle":  "#B8E6F5",
+    "happy": "#A8E0F5",
+    "angry": "#F5B8A8",
+    "sick":  "#B8D4B8",
 }
 
 
@@ -25,81 +28,235 @@ def _clear(canvas):
     canvas.delete("pet")
 
 
-def _draw_body(canvas, cx, cy, fill, tone_color):
-    """Teardrop shape: pointed top, rounded bottom."""
-    points = []
-    for i in range(37):
-        angle = math.radians(i * 10)
-        r = BODY_WIDTH / 2 * (1 - 0.35 * math.cos(angle))
-        px = cx + r * math.sin(angle)
-        py = cy + BODY_HEIGHT / 2 * (1 - math.cos(angle)) - BODY_HEIGHT / 2
-        points.extend([px, py])
-    canvas.create_polygon(points, fill=fill, outline=tone_color, width=3, smooth=True, tags="pet")
+def _teardrop_points(cx, cy, w, h):
+    """
+    Full closed teardrop: pointed top, rounded bottom.
+    Returns a flat list [x1,y1,x2,y2,...] for create_polygon.
+    """
+    pts = []
+    steps = 48
+    for i in range(steps):
+        t = (i / steps) * 2 * math.pi
+        # Parametric teardrop
+        x = cx + math.sin(t) * (w / 2) * (1 - 0.4 * math.cos(t))
+        y = cy - math.cos(t) * (h / 2)
+        pts.extend([x, y])
+    return pts
+
+
+def _shadow(canvas, cx, cy):
+    canvas.create_oval(
+        cx - 36, cy + 38, cx + 36, cy + 50,
+        fill="#1A1A1A", outline="", tags="pet"
+    )
+
+
+def _body(canvas, cx, cy, mood):
+    fill = MOOD_FILL[mood]
+    glow = MOOD_GLOW[mood]
+
+    # Main teardrop
+    pts = _teardrop_points(cx, cy, BODY_W, BODY_H)
+    canvas.create_polygon(
+        pts, fill=fill, outline="#3A3A3A", width=3,
+        smooth=True, tags="pet"
+    )
+
+    # Inner glow (depth)
+    inner_pts = _teardrop_points(cx, cy + 4, BODY_W - 18, BODY_H - 18)
+    canvas.create_polygon(
+        inner_pts, fill=glow, outline="", smooth=True, tags="pet"
+    )
+
+    # Glossy highlight (upper-left)
+    canvas.create_oval(
+        cx - 18, cy - 28, cx + 2, cy - 8,
+        fill="white", outline="", tags="pet"
+    )
+    canvas.create_oval(
+        cx - 10, cy - 24, cx - 2, cy - 16,
+        fill="#FFFFFF", outline="", tags="pet"
+    )
+
+
+def _feet(canvas, cx, cy, mood):
+    fill = MOOD_FILL[mood]
+    for dx in (-18, 18):
+        canvas.create_oval(
+            cx + dx - 10, cy + 32, cx + dx + 10, cy + 46,
+            fill=fill, outline="#3A3A3A", width=2, tags="pet"
+        )
+
+
+def _eyes(canvas, cx, cy, mood, tick):
+    blink = (tick % 140) < 5
+
+    if blink:
+        for dx in (-14, 14):
+            canvas.create_line(
+                cx + dx - 6, cy - 4, cx + dx + 6, cy - 4,
+                width=3, fill="#1A1A1A", tags="pet"
+            )
+        return
+
+    if mood == "happy":
+        for dx in (-14, 14):
+            canvas.create_arc(
+                cx + dx - 7, cy - 10, cx + dx + 7, cy + 2,
+                start=0, extent=180, style="arc", width=3,
+                outline="#1A1A1A", tags="pet"
+            )
+        return
+
+    if mood == "angry":
+        for dx in (-14, 14):
+            canvas.create_oval(
+                cx + dx - 5, cy - 8, cx + dx + 5, cy + 4,
+                fill="#1A1A1A", outline="", tags="pet"
+            )
+            slope = 1 if dx < 0 else -1
+            canvas.create_line(
+                cx + dx - 8, cy - 14, cx + dx + 6, cy - 10 + (3 * slope),
+                width=3, fill="#1A1A1A", tags="pet"
+            )
+        return
+
+    if mood == "sick":
+        for dx in (-14, 14):
+            canvas.create_arc(
+                cx + dx - 7, cy - 4, cx + dx + 7, cy + 6,
+                start=180, extent=180, style="arc", width=3,
+                outline="#1A1A1A", tags="pet"
+            )
+        return
+
+    # Normal
+    for dx in (-14, 14):
+        canvas.create_oval(
+            cx + dx - 6, cy - 8, cx + dx + 6, cy + 8,
+            fill="white", outline="#3A3A3A", width=1, tags="pet"
+        )
+        canvas.create_oval(
+            cx + dx - 3, cy - 4, cx + dx + 1, cy + 2,
+            fill="#1A1A1A", outline="", tags="pet"
+        )
+        canvas.create_oval(
+            cx + dx - 2, cy - 6, cx + dx, cy - 4,
+            fill="white", outline="", tags="pet"
+        )
+
+
+def _mouth(canvas, cx, cy, mood):
+    if mood == "happy":
+        canvas.create_arc(
+            cx - 12, cy + 4, cx + 12, cy + 22,
+            start=200, extent=140, style="arc", width=3,
+            outline="#1A1A1A", tags="pet"
+        )
+    elif mood == "angry":
+        canvas.create_line(
+            cx - 10, cy + 14, cx + 10, cy + 10,
+            width=3, fill="#1A1A1A", tags="pet"
+        )
+    elif mood == "sick":
+        canvas.create_arc(
+            cx - 8, cy + 10, cx + 8, cy + 22,
+            start=20, extent=140, style="arc", width=3,
+            outline="#1A1A1A", tags="pet"
+        )
+    else:
+        canvas.create_arc(
+            cx - 6, cy + 8, cx + 6, cy + 18,
+            start=200, extent=140, style="arc", width=2,
+            outline="#1A1A1A", tags="pet"
+        )
+
+
+def _cheeks(canvas, cx, cy, mood):
+    if mood in ("happy", "idle"):
+        for dx in (-22, 22):
+            canvas.create_oval(
+                cx + dx - 6, cy + 4, cx + dx + 2, cy + 12,
+                fill="#F4A6A0", outline="", tags="pet"
+            )
+
+
+def _mood_fx(canvas, cx, cy, mood, tick):
+    if mood == "happy":
+        for i in range(3):
+            sx = cx + math.sin(tick / 8 + i * 2.1) * 52
+            sy = cy - 55 + i * 14
+            canvas.create_text(
+                sx, sy, text="✦", fill="#FFD95A",
+                font=("Arial", 10, "bold"), tags="pet"
+            )
+        if (tick // 18) % 3 == 0:
+            canvas.create_text(
+                cx + 45, cy - 50, text="♥",
+                fill="#FF6B8A", font=("Arial", 11, "bold"), tags="pet"
+            )
+
+    elif mood == "angry":
+        for side in (-1, 1):
+            px = cx + side * 28
+            py = cy - 42 - (tick % 20) * 0.8
+            canvas.create_oval(
+                px - 4, py - 4, px + 4, py + 4,
+                fill="#DDD", outline="", tags="pet"
+            )
+        canvas.create_text(
+            cx + 40, cy - 40, text="♨",
+            font=("Arial", 14), tags="pet"
+        )
+
+    elif mood == "sick":
+        drop_y = cy - 35 + math.sin(tick / 10) * 2
+        canvas.create_polygon(
+            cx + 26, drop_y - 10,
+            cx + 32, drop_y + 6,
+            cx + 20, drop_y + 6,
+            fill="#79CFFF", outline="", tags="pet"
+        )
+        if (tick // 14) % 2 == 0:
+            canvas.create_text(
+                cx - 38, cy - 48, text="✦", fill="#FFE082",
+                font=("Arial", 10), tags="pet"
+            )
+            canvas.create_text(
+                cx + 40, cy - 46, text="✦", fill="#FFE082",
+                font=("Arial", 10), tags="pet"
+            )
+
+
+def _draw_pet(canvas, cx, cy, mood, tick):
+    _shadow(canvas, cx, cy)
+    _body(canvas, cx, cy, mood)
+    _feet(canvas, cx, cy, mood)
+    _eyes(canvas, cx, cy, mood, tick)
+    _mouth(canvas, cx, cy, mood)
+    _cheeks(canvas, cx, cy, mood)
+    _mood_fx(canvas, cx, cy, mood, tick)
 
 
 def draw_idle(canvas, tick, tone_color):
     _clear(canvas)
-    bob = math.sin(tick / 10) * 3
-    y = CENTER_Y + bob
-    _draw_body(canvas, CENTER_X, y, MOOD_FILL_COLORS["idle"], tone_color)
-    blink = (tick % 70) < 4
-    eye_h = 3 if blink else 9
-    for dx in (-12, 12):
-        canvas.create_oval(
-            CENTER_X + dx - 5, y - 5 - eye_h // 2,
-            CENTER_X + dx + 5, y - 5 + eye_h // 2,
-            fill="black", tags="pet"
-        )
-    for dx in (-12, 12):
-        canvas.create_oval(
-            CENTER_X + dx - 8, y + 12, CENTER_X + dx - 2, y + 18,
-            fill="#F4A6A0", outline="", tags="pet"
-        )
+    bob = math.sin(tick / 18) * 2.5
+    _draw_pet(canvas, CENTER_X, CENTER_Y + bob, "idle", tick)
 
 
 def draw_happy(canvas, tick, tone_color):
     _clear(canvas)
-    bounce = abs(math.sin(tick / 6)) * 12
-    y = CENTER_Y - bounce
-    _draw_body(canvas, CENTER_X, y, MOOD_FILL_COLORS["happy"], tone_color)
-    for dx in (-12, 12):
-        canvas.create_arc(
-            CENTER_X + dx - 6, y - 10, CENTER_X + dx + 6, y,
-            start=0, extent=180, style="arc", width=2, tags="pet"
-        )
-    canvas.create_arc(
-        CENTER_X - 14, y + 2, CENTER_X + 14, y + 20,
-        start=200, extent=140, style="arc", width=3, tags="pet"
-    )
-    for dx in (-12, 12):
-        canvas.create_oval(
-            CENTER_X + dx - 8, y + 10, CENTER_X + dx - 2, y + 16,
-            fill="#F4A6A0", outline="", tags="pet"
-        )
+    bounce = abs(math.sin(tick / 7)) * 10
+    _draw_pet(canvas, CENTER_X, CENTER_Y - bounce, "happy", tick)
 
 
 def draw_angry(canvas, tick, tone_color):
     _clear(canvas)
-    shake = math.sin(tick / 2) * 4
-    x = CENTER_X + shake
-    y = CENTER_Y
-    _draw_body(canvas, x, y, MOOD_FILL_COLORS["angry"], tone_color)
-    for dx in (-12, 12):
-        canvas.create_oval(x + dx - 5, y - 8, x + dx + 5, y, fill="black", tags="pet")
-        brow_dir = 1 if dx < 0 else -1
-        canvas.create_line(
-            x + dx - 9, y - 14, x + dx + 9, y - 14 + (4 * brow_dir),
-            width=2, fill="black", tags="pet"
-        )
-    canvas.create_line(x - 12, y + 14, x + 12, y + 10, width=3, fill="black", tags="pet")
+    shake = math.sin(tick * 0.9) * 3.5
+    _draw_pet(canvas, CENTER_X + shake, CENTER_Y, "angry", tick)
 
 
 def draw_sick(canvas, tick, tone_color):
     _clear(canvas)
-    sway = math.sin(tick / 20) * 5
-    x = CENTER_X + sway
-    y = CENTER_Y + 5
-    _draw_body(canvas, x, y, MOOD_FILL_COLORS["sick"], tone_color)
-    for dx in (-12, 12):
-        canvas.create_line(x + dx - 6, y - 5, x + dx + 6, y - 5, width=3, fill="black", tags="pet")
-    canvas.create_line(x - 10, y + 16, x + 10, y + 16, width=2, fill="black", tags="pet")
+    sway = math.sin(tick / 22) * 5
+    _draw_pet(canvas, CENTER_X + sway, CENTER_Y + 4, "sick", tick)

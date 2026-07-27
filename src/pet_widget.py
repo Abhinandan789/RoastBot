@@ -27,10 +27,27 @@ from src.pet_animations import (
     CANVAS_SIZE, TRANSPARENT_KEY
 )
 from src.db import get_recent_roasts
+from src.config import PET_STATE_FILE, PET_POSITION_FILE
 
 POLL_INTERVAL_MS = 4000
 ANIMATION_INTERVAL_MS = 33
 BUBBLE_DURATION_MS = 12000
+
+def load_pet_position():
+    if os.path.exists(PET_POSITION_FILE):
+        try:
+            with open(PET_POSITION_FILE) as f:
+                pos = json.load(f)
+                return pos.get("x", 100), pos.get("y", 200)
+        except (json.JSONDecodeError, OSError):
+            pass
+    return 100, 200  # default, matches original hardcoded position
+
+
+def save_pet_position(x, y):
+    os.makedirs(os.path.dirname(PET_POSITION_FILE), exist_ok=True)
+    with open(PET_POSITION_FILE, "w") as f:
+        json.dump({"x": x, "y": y}, f)
 
 
 class BubbleWindow:
@@ -80,6 +97,15 @@ class BubbleWindow:
         y = py - height + 15
         self.toplevel.geometry(f"{width}x{height}+{x}+{y}")
 
+    def _reposition_to_parent(self):
+        """Reposition the bubble to follow the parent window without
+        redrawing its contents - used while the parent is being dragged."""
+        if self.toplevel is None:
+            return
+        width = self.toplevel.winfo_width()
+        height = self.toplevel.winfo_height()
+        self._position(width, height)
+
     def hide(self):
         if self.toplevel is not None:
             self.toplevel.withdraw()
@@ -101,6 +127,9 @@ class PetWidget:
         self.bubble_hide_job = None
 
         self.bubble = BubbleWindow(self.root)
+        self._drag_start_x = 0
+        self._drag_start_y = 0
+        self._drag_moved = False
 
         self._setup_window()
         self._setup_canvas()
@@ -111,7 +140,8 @@ class PetWidget:
     def _setup_window(self):
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
-        self.root.geometry(f"{CANVAS_SIZE}x{CANVAS_SIZE}+100+200")
+        x, y = load_pet_position()
+        self.root.geometry(f"{CANVAS_SIZE}x{CANVAS_SIZE}+{x}+{y}")
         try:
             self.root.attributes("-transparentcolor", TRANSPARENT_KEY)
         except tk.TclError:
@@ -124,7 +154,9 @@ class PetWidget:
             bg=TRANSPARENT_KEY, highlightthickness=0
         )
         self.canvas.pack()
-        self.canvas.bind("<Button-1>", self._on_click)
+        self.canvas.bind("<ButtonPress-1>", self._on_press)
+        self.canvas.bind("<B1-Motion>", self._on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self._on_release)
 
     def _animation_loop(self):
         draw_mood(self.canvas, self.current_mood, self.tick, self.current_tone)
@@ -164,8 +196,30 @@ class PetWidget:
         self.bubble.hide()
         self.bubble_hide_job = None
 
-    def _on_click(self, event):
-        self._open_history_panel()
+    def _on_press(self, event):
+        self._drag_start_x = event.x
+        self._drag_start_y = event.y
+        self._drag_moved = False
+
+    def _on_drag(self, event):
+        dx = event.x - self._drag_start_x
+        dy = event.y - self._drag_start_y
+
+        if abs(dx) > 3 or abs(dy) > 3:
+            self._drag_moved = True
+
+        new_x = self.root.winfo_x() + dx
+        new_y = self.root.winfo_y() + dy
+        self.root.geometry(f"+{new_x}+{new_y}")
+
+        if self.bubble.toplevel is not None and self.bubble.toplevel.winfo_viewable():
+            self.bubble._reposition_to_parent()
+
+    def _on_release(self, event):
+        if not self._drag_moved:
+            self._open_history_panel()
+        else:
+            save_pet_position(self.root.winfo_x(), self.root.winfo_y())
 
     def _on_close(self):
         self.bubble.destroy()

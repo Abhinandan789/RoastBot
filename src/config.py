@@ -20,6 +20,7 @@ DATA_DIR = os.path.join(_BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "roastbot.db")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
 PET_STATE_FILE = os.path.join(DATA_DIR, "pet_state.json")  # NEW
+PET_POSITION_FILE = os.path.join(DATA_DIR, "pet_position.json")
 
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 GROQ_MODEL = "llama-3.3-70b-versatile"

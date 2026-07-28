@@ -70,18 +70,23 @@ def draw_mood(canvas, mood, tick, tone_bucket="neutral"):
 # starting at (0,0) of whatever canvas it's given.
 # ---------------------------------------------------------------------
 
-BUBBLE_PADDING = 14
-BUBBLE_LINE_HEIGHT = 18
-BUBBLE_WIDTH = 230
-BUBBLE_WRAP_WIDTH = 28
+BUBBLE_PADDING = 16
+BUBBLE_LINE_HEIGHT = 20
+BUBBLE_WIDTH = 260
+BUBBLE_WRAP_WIDTH = 32
 BUBBLE_FONT = ("Segoe UI", 10)
-BUBBLE_FILL = "#FFFDF8"
-BUBBLE_BORDER = "#404040"
-BUBBLE_SHADOW = "#BEBEBE"
-BUBBLE_TEXT_COLOR = "#202020"
+BUBBLE_FILL = "#252525"
+BUBBLE_TEXT_COLOR = "#F0F0F0"
 BUBBLE_TAIL_HEIGHT = 14
 BUBBLE_RADIUS = 14
 BUBBLE_SHADOW_OFFSET = 3
+
+MOOD_BORDER_COLORS = {
+    "happy": "#7EC8E3",
+    "angry": "#E38B7E",
+    "sick": "#9BB89B",
+    "idle": "#666666",
+}
 
 
 def _round_rect(canvas, x1, y1, x2, y2, radius=14, **kwargs):
@@ -120,48 +125,43 @@ def compute_bubble_geometry(text):
     return wrapped, bubble_width, bubble_height, window_width, window_height
 
 
-def render_bubble(canvas, wrapped_text, bubble_width, bubble_height):
+def render_bubble(canvas, wrapped_text, bubble_width, bubble_height, mood="idle", show_cursor=False):
     """
-    Draw the full bubble (shadow, body, tail, text) onto a canvas sized
-    exactly to window_width x window_height as returned by
-    compute_bubble_geometry(). Drawing starts at (0,0).
+    Draws the bubble with a dark theme, mood-colored border, and a tail
+    pointing down toward the pet. show_cursor appends a blinking '|' for
+    the typing effect - caller controls the blink timing.
     """
     canvas.delete("bubble")
 
+    border = MOOD_BORDER_COLORS.get(mood, MOOD_BORDER_COLORS["idle"])
     x1, y1 = 0, 0
     x2, y2 = bubble_width, bubble_height
 
     _round_rect(
         canvas, x1 + BUBBLE_SHADOW_OFFSET, y1 + BUBBLE_SHADOW_OFFSET,
         x2 + BUBBLE_SHADOW_OFFSET, y2 + BUBBLE_SHADOW_OFFSET,
-        radius=BUBBLE_RADIUS, fill=BUBBLE_SHADOW, outline="", tags="bubble"
+        radius=BUBBLE_RADIUS, fill="#000000", outline="", tags="bubble"
     )
 
     _round_rect(
         canvas, x1, y1, x2, y2,
-        radius=BUBBLE_RADIUS, fill=BUBBLE_FILL, outline=BUBBLE_BORDER,
-        width=2, tags="bubble"
+        radius=BUBBLE_RADIUS, fill=BUBBLE_FILL, outline=border, width=2, tags="bubble"
     )
 
     tail_cx = bubble_width // 2
-
     canvas.create_polygon(
-        tail_cx + BUBBLE_SHADOW_OFFSET, y2 + BUBBLE_SHADOW_OFFSET,
-        tail_cx - 8 + BUBBLE_SHADOW_OFFSET, y2 + BUBBLE_TAIL_HEIGHT + BUBBLE_SHADOW_OFFSET,
-        tail_cx + 8 + BUBBLE_SHADOW_OFFSET, y2 + BUBBLE_TAIL_HEIGHT + BUBBLE_SHADOW_OFFSET,
-        fill=BUBBLE_SHADOW, outline="", tags="bubble"
+        tail_cx - 10, y2, tail_cx + 10, y2, tail_cx, y2 + BUBBLE_TAIL_HEIGHT,
+        fill=BUBBLE_FILL, outline=border, width=2, tags="bubble"
+    )
+    canvas.create_polygon(
+        tail_cx - 8, y2, tail_cx + 8, y2, tail_cx, y2 + BUBBLE_TAIL_HEIGHT - 2,
+        fill=BUBBLE_FILL, outline="", tags="bubble"
     )
 
-    canvas.create_polygon(
-        tail_cx, y2,
-        tail_cx - 8, y2 + BUBBLE_TAIL_HEIGHT,
-        tail_cx + 8, y2 + BUBBLE_TAIL_HEIGHT,
-        fill=BUBBLE_FILL, outline=BUBBLE_BORDER, width=2, tags="bubble"
-    )
-
+    display_text = wrapped_text + ("|" if show_cursor else "")
     canvas.create_text(
         bubble_width // 2, bubble_height // 2,
-        text=wrapped_text, width=bubble_width - 28,
+        text=display_text, width=bubble_width - 28,
         font=BUBBLE_FONT, fill=BUBBLE_TEXT_COLOR, justify="center",
         tags="bubble"
     )

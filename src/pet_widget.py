@@ -1,84 +1,76 @@
 """
-pet_widget.py - The floating desktop pet window.
+pet_widget.py - Floating desktop pet with animated speech bubble + TTS.
 
-Single responsibility: manage the Tkinter window lifecycle, run the
-continuous animation loop, poll pet_state.json for changes, trigger the
-auto-popup speech bubble (hosted in its own Toplevel via BubbleWindow) when
-a new roast arrives, and show a history panel on click. Pet drawing and
-bubble geometry are delegated entirely to pet_animations.py.
-
-This process is independent from roast.py - it only reads pet_state.json,
-never writes to it, and never calls the GitHub/Groq APIs directly.
+Pet design is loaded via the existing registry (src/pets/registry.py),
+driven by ACTIVE_PET in .env - unchanged from v2.2.0/v3.0.0. This stage
+only adds bubble animation (entrance bounce, typing effect, exit shrink)
+and voice playback on top of that existing architecture.
 """
 
 import ctypes
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
 except Exception:
-    pass  # not on Windows, or older Windows version without this API
+    pass
 
 import json
 import os
 import tkinter as tk
 
-from src.config import PET_STATE_FILE
+from src.config import PET_STATE_FILE, ACTIVE_PET
+from src.pets.registry import get_active_pet_module
 from src.pet_animations import (
     draw_mood, compute_bubble_geometry, render_bubble,
     CANVAS_SIZE, TRANSPARENT_KEY
 )
 from src.db import get_recent_roasts
-from src.config import PET_STATE_FILE, PET_POSITION_FILE
+from src.sounds import play_typing_click
+from src.tts import speak
 
 POLL_INTERVAL_MS = 4000
 ANIMATION_INTERVAL_MS = 33
 BUBBLE_DURATION_MS = 12000
+TYPING_SPEED_MS = 28
+CURSOR_BLINK_MS = 530
 
-def load_pet_position():
-    if os.path.exists(PET_POSITION_FILE):
-        try:
-            with open(PET_POSITION_FILE) as f:
-                pos = json.load(f)
-                return pos.get("x", 100), pos.get("y", 200)
-        except (json.JSONDecodeError, OSError):
-            pass
-    return 100, 200  # default, matches original hardcoded position
-
-
-def save_pet_position(x, y):
-    os.makedirs(os.path.dirname(PET_POSITION_FILE), exist_ok=True)
-    with open(PET_POSITION_FILE, "w") as f:
-        json.dump({"x": x, "y": y}, f)
+_active_pet_module = get_active_pet_module(ACTIVE_PET)
 
 
 class BubbleWindow:
     """
-    Manages an independent, borderless Toplevel window that floats above
-    the pet, sized dynamically to fit whatever text it's showing. Kept
-    separate from PetWidget's main canvas so bubble sizing/styling never
-    fights with the fixed-size pet canvas.
+    Animated speech bubble: entrance bounce, character-by-character
+    typing with click sound, blinking cursor once typing completes,
+    voice playback after typing finishes, and an exit shrink animation.
     """
 
-    def __init__(self, parent_root):
-        self.parent_root = parent_root
+    _BOUNCE_OFFSETS = [28, 20, 12, 5, 0, -3, -1, 0]
+
+    def __init__(self, parent_root, pet_widget):
+        self.parent = parent_root
+        self.pet_widget = pet_widget
         self.toplevel = None
         self.canvas = None
+        self._jobs = []
+        self.full_text = ""
+        self.typed_text = ""
+        self.mood = "idle"
+        self.bw = self.bh = self.ww = self.wh = 0
+        self.final_x = self.final_y = 0
 
-    def show(self, text):
-        wrapped, bw, bh, ww, wh = compute_bubble_geometry(text)
-        self._ensure_window(ww, wh)
-        render_bubble(self.canvas, wrapped, bw, bh)
-        self._position(ww, wh)
-        self.toplevel.deiconify()
+    def _cancel_jobs(self):
+        for job in self._jobs:
+            self.parent.after_cancel(job)
+        self._jobs.clear()
 
     def _ensure_window(self, width, height):
         if self.toplevel is None:
-            self.toplevel = tk.Toplevel(self.parent_root)
+            self.toplevel = tk.Toplevel(self.parent)
             self.toplevel.overrideredirect(True)
             self.toplevel.attributes("-topmost", True)
             try:
                 self.toplevel.attributes("-transparentcolor", TRANSPARENT_KEY)
             except tk.TclError:
-                pass  # not supported on this platform - falls back to opaque
+                pass
             self.canvas = tk.Canvas(
                 self.toplevel, width=width, height=height,
                 bg=TRANSPARENT_KEY, highlightthickness=0
@@ -88,29 +80,87 @@ class BubbleWindow:
             self.canvas.config(width=width, height=height)
         self.toplevel.geometry(f"{width}x{height}")
 
-    def _position(self, width, height):
-        self.parent_root.update_idletasks()
-        px = self.parent_root.winfo_x()
-        py = self.parent_root.winfo_y()
-        pw = self.parent_root.winfo_width()
-        x = px + (pw - width) // 2
-        y = py - height + 15
-        self.toplevel.geometry(f"{width}x{height}+{x}+{y}")
+    def show(self, text, mood="idle"):
+        self._cancel_jobs()
+        self.full_text = text
+        self.mood = mood
+        self.typed_text = ""
 
-    def _reposition_to_parent(self):
-        """Reposition the bubble to follow the parent window without
-        redrawing its contents - used while the parent is being dragged."""
-        if self.toplevel is None:
-            return
-        width = self.toplevel.winfo_width()
-        height = self.toplevel.winfo_height()
-        self._position(width, height)
+        wrapped, bw, bh, ww, wh = compute_bubble_geometry(text)
+        self.bw, self.bh, self.ww, self.wh = bw, bh, ww, wh
+
+        px = self.pet_widget.root.winfo_x()
+        py = self.pet_widget.root.winfo_y()
+        pw = self.pet_widget.root.winfo_width()
+
+        self.final_x = px + (pw - ww) // 2
+        self.final_y = py - wh + 30
+
+        self._ensure_window(ww, wh)
+        start_y = self.final_y + self._BOUNCE_OFFSETS[0]
+        self.toplevel.geometry(f"{ww}x{wh}+{self.final_x}+{start_y}")
+        self.toplevel.deiconify()
+
+        self._animate_entrance(0)
 
     def hide(self):
-        if self.toplevel is not None:
-            self.toplevel.withdraw()
+        self._cancel_jobs()
+        self._animate_exit(0)
+
+    def _animate_entrance(self, frame):
+        if frame >= len(self._BOUNCE_OFFSETS):
+            self._start_typing()
+            return
+        y = self.final_y + self._BOUNCE_OFFSETS[frame]
+        self.toplevel.geometry(f"{self.ww}x{self.wh}+{self.final_x}+{y}")
+        render_bubble(self.canvas, "", self.bw, self.bh, self.mood, False)
+        job = self.parent.after(30, lambda: self._animate_entrance(frame + 1))
+        self._jobs.append(job)
+
+    def _start_typing(self):
+        self._type_next(0)
+
+    def _type_next(self, index):
+        if index > len(self.full_text):
+            self._start_cursor_blink()
+            speak(self.full_text, ACTIVE_PET)
+            return
+        self.typed_text = self.full_text[:index]
+        render_bubble(self.canvas, self.typed_text, self.bw, self.bh, self.mood, True)
+        play_typing_click()
+        job = self.parent.after(TYPING_SPEED_MS, lambda: self._type_next(index + 1))
+        self._jobs.append(job)
+
+    def _start_cursor_blink(self):
+        cursor_state = {"on": False}
+
+        def blink():
+            if not self.toplevel or not self.toplevel.winfo_exists():
+                return
+            cursor_state["on"] = not cursor_state["on"]
+            render_bubble(self.canvas, self.typed_text, self.bw, self.bh, self.mood, cursor_state["on"])
+            job = self.parent.after(CURSOR_BLINK_MS, blink)
+            self._jobs.append(job)
+
+        blink()
+
+    def _animate_exit(self, frame):
+        if frame >= 8:
+            if self.toplevel:
+                self.toplevel.withdraw()
+            return
+        t = frame / 8
+        y = self.final_y + int(t * 20)
+        w = max(1, int(self.ww * (1.0 - t * 0.25)))
+        h = max(1, int(self.wh * (1.0 - t * 0.25)))
+        x = self.final_x + (self.ww - w) // 2
+        self.toplevel.geometry(f"{w}x{h}+{x}+{y}")
+        self.canvas.config(width=w, height=h)
+        job = self.parent.after(20, lambda: self._animate_exit(frame + 1))
+        self._jobs.append(job)
 
     def destroy(self):
+        self._cancel_jobs()
         if self.toplevel is not None:
             self.toplevel.destroy()
             self.toplevel = None
@@ -125,12 +175,12 @@ class PetWidget:
         self.current_mood = "idle"
         self.current_tone = "neutral"
         self.bubble_hide_job = None
-
-        self.bubble = BubbleWindow(self.root)
         self._drag_start_x = 0
         self._drag_start_y = 0
         self._drag_moved = False
         self._history_panel = None
+
+        self.bubble = BubbleWindow(self.root, self)
 
         self._setup_window()
         self._setup_canvas()
@@ -141,8 +191,7 @@ class PetWidget:
     def _setup_window(self):
         self.root.overrideredirect(True)
         self.root.attributes("-topmost", True)
-        x, y = load_pet_position()
-        self.root.geometry(f"{CANVAS_SIZE}x{CANVAS_SIZE}+{x}+{y}")
+        self.root.geometry(f"{CANVAS_SIZE}x{CANVAS_SIZE}+100+200")
         try:
             self.root.attributes("-transparentcolor", TRANSPARENT_KEY)
         except tk.TclError:
@@ -171,7 +220,6 @@ class PetWidget:
     def _check_pet_state(self):
         if not os.path.exists(PET_STATE_FILE):
             return
-
         try:
             with open(PET_STATE_FILE) as f:
                 data = json.load(f)
@@ -188,7 +236,7 @@ class PetWidget:
             self._show_bubble(roast_text)
 
     def _show_bubble(self, text):
-        self.bubble.show(text)
+        self.bubble.show(text, mood=self.current_mood)
         if self.bubble_hide_job is not None:
             self.root.after_cancel(self.bubble_hide_job)
         self.bubble_hide_job = self.root.after(BUBBLE_DURATION_MS, self._hide_bubble)
@@ -198,34 +246,22 @@ class PetWidget:
         self.bubble_hide_job = None
 
     def _on_press(self, event):
-        self._press_x_root = event.x_root
-        self._press_y_root = event.y_root
-
-        self._start_win_x = self.root.winfo_x()
-        self._start_win_y = self.root.winfo_y()
-
+        self._drag_start_x = event.x
+        self._drag_start_y = event.y
         self._drag_moved = False
 
-
     def _on_drag(self, event):
-        dx = event.x_root - self._press_x_root
-        dy = event.y_root - self._press_y_root
-
-        if dx * dx + dy * dy > 9:      # 3px threshold
+        dx = event.x - self._drag_start_x
+        dy = event.y - self._drag_start_y
+        if abs(dx) > 3 or abs(dy) > 3:
             self._drag_moved = True
-
-        self.root.geometry(
-            f"+{self._start_win_x + dx}+{self._start_win_y + dy}"
-        )
-
-        if self.bubble.toplevel is not None and self.bubble.toplevel.winfo_viewable():
-            self.bubble._reposition_to_parent()
+        new_x = self.root.winfo_x() + dx
+        new_y = self.root.winfo_y() + dy
+        self.root.geometry(f"+{new_x}+{new_y}")
 
     def _on_release(self, event):
         if not self._drag_moved:
             self._open_history_panel()
-        else:
-            save_pet_position(self.root.winfo_x(), self.root.winfo_y())
 
     def _on_close(self):
         self.bubble.destroy()
@@ -262,12 +298,9 @@ class PetWidget:
         else:
             for i, roast_text in enumerate(recent, start=1):
                 text_widget.insert("end", f"{i}. {roast_text}\n\n")
-
         text_widget.config(state="disabled")
 
-        close_btn = tk.Button(panel, text="Close", command=lambda: self._close_history_panel(panel))
-        close_btn.pack(pady=6)
-
+        tk.Button(panel, text="Close", command=lambda: self._close_history_panel(panel)).pack(pady=6)
         self._history_panel = panel
 
     def _close_history_panel(self, panel):

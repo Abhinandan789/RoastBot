@@ -21,3 +21,10 @@
   event-based progress counting
 - roast.py and mood.py extended in place to use the new multi-source
   pipeline - no parallel/forked files introduced
+  Added five new pet designs: droplet, cat, ghost, robot, smiley2 -
+  alongside the original smiley - all selectable via ACTIVE_PET in .env
+- Changed default pet from smiley to droplet
+- Added tools/pet_face_tester.py: a standalone visual tester that
+  auto-discovers all registered pets and renders every mood
+  (idle/happy/angry/sick) side by side for design comparison before
+  committing to a look

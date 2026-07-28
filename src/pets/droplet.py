@@ -1,6 +1,7 @@
-"""droplet.py - Glossy teardrop pet with depth, feet, and mood effects."""
+"""droplet.py - Living droplet that watches you."""
 
 import math
+import random
 
 CANVAS_SIZE = 220
 CENTER_X = CANVAS_SIZE // 2
@@ -23,21 +24,19 @@ MOOD_GLOW = {
     "sick":  "#B8D4B8",
 }
 
+_hover_scale = 1.0
+_squish = 0.0
+
 
 def _clear(canvas):
     canvas.delete("pet")
 
 
 def _teardrop_points(cx, cy, w, h):
-    """
-    Full closed teardrop: pointed top, rounded bottom.
-    Returns a flat list [x1,y1,x2,y2,...] for create_polygon.
-    """
     pts = []
     steps = 48
     for i in range(steps):
         t = (i / steps) * 2 * math.pi
-        # Parametric teardrop
         x = cx + math.sin(t) * (w / 2) * (1 - 0.4 * math.cos(t))
         y = cy - math.cos(t) * (h / 2)
         pts.extend([x, y])
@@ -51,35 +50,33 @@ def _shadow(canvas, cx, cy):
     )
 
 
-def _body(canvas, cx, cy, mood):
+def _body(canvas, cx, cy, mood, scale=1.0):
     fill = MOOD_FILL[mood]
     glow = MOOD_GLOW[mood]
+    w, h = BODY_W * scale, BODY_H * scale
 
-    # Main teardrop
-    pts = _teardrop_points(cx, cy, BODY_W, BODY_H)
+    pts = _teardrop_points(cx, cy, w, h)
     canvas.create_polygon(
         pts, fill=fill, outline="#3A3A3A", width=3,
         smooth=True, tags="pet"
     )
 
-    # Inner glow (depth)
-    inner_pts = _teardrop_points(cx, cy + 4, BODY_W - 18, BODY_H - 18)
+    inner_pts = _teardrop_points(cx, cy + 4 * scale, w - 18, h - 18)
     canvas.create_polygon(
         inner_pts, fill=glow, outline="", smooth=True, tags="pet"
     )
 
-    # Glossy highlight (upper-left)
     canvas.create_oval(
-        cx - 18, cy - 28, cx + 2, cy - 8,
+        cx - 18 * scale, cy - 28 * scale, cx + 2 * scale, cy - 8 * scale,
         fill="white", outline="", tags="pet"
     )
     canvas.create_oval(
-        cx - 10, cy - 24, cx - 2, cy - 16,
+        cx - 10 * scale, cy - 24 * scale, cx - 2 * scale, cy - 16 * scale,
         fill="#FFFFFF", outline="", tags="pet"
     )
 
 
-def _feet(canvas, cx, cy, mood):
+def _feet(canvas, cx, cy, mood, scale=1.0):
     fill = MOOD_FILL[mood]
     for dx in (-18, 18):
         canvas.create_oval(
@@ -88,8 +85,13 @@ def _feet(canvas, cx, cy, mood):
         )
 
 
-def _eyes(canvas, cx, cy, mood, tick):
-    blink = (tick % 140) < 5
+def _track_pupil(canvas, eye_cx, eye_cy, max_off=4):
+    from src.pet_animations import track_mouse
+    return track_mouse(canvas, eye_cx, eye_cy, max_offset=max_off)
+
+
+def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
+    blink = random.random() < 0.005 or (tick % 180 < 4 and random.random() < 0.3)
 
     if blink:
         for dx in (-14, 14):
@@ -130,18 +132,18 @@ def _eyes(canvas, cx, cy, mood, tick):
             )
         return
 
-    # Normal
     for dx in (-14, 14):
         canvas.create_oval(
             cx + dx - 6, cy - 8, cx + dx + 6, cy + 8,
             fill="white", outline="#3A3A3A", width=1, tags="pet"
         )
+        px, py = _track_pupil(canvas, cx + dx, cy)
         canvas.create_oval(
-            cx + dx - 3, cy - 4, cx + dx + 1, cy + 2,
+            px - 3, py - 4, px + 1, py + 2,
             fill="#1A1A1A", outline="", tags="pet"
         )
         canvas.create_oval(
-            cx + dx - 2, cy - 6, cx + dx, cy - 4,
+            px - 2, py - 6, px, py - 4,
             fill="white", outline="", tags="pet"
         )
 
@@ -228,35 +230,71 @@ def _mood_fx(canvas, cx, cy, mood, tick):
             )
 
 
-def _draw_pet(canvas, cx, cy, mood, tick):
+def _draw_pet(canvas, cx, cy, mood, tick, scale=1.0):
     _shadow(canvas, cx, cy)
-    _body(canvas, cx, cy, mood)
-    _feet(canvas, cx, cy, mood)
-    _eyes(canvas, cx, cy, mood, tick)
+    _body(canvas, cx, cy, mood, scale)
+    _feet(canvas, cx, cy, mood, scale)
+    _eyes(canvas, cx, cy, mood, tick, scale)
     _mouth(canvas, cx, cy, mood)
     _cheeks(canvas, cx, cy, mood)
     _mood_fx(canvas, cx, cy, mood, tick)
 
 
+def _update_interactivity(canvas):
+    global _hover_scale, _squish
+    try:
+        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
+        my = canvas.winfo_pointery() - canvas.winfo_rooty()
+        in_bounds = 50 < mx < 170 and 50 < my < 170
+    except Exception:
+        in_bounds = False
+
+    target = 1.08 if in_bounds else 1.0
+    _hover_scale += (target - _hover_scale) * 0.15
+    _squish *= 0.85
+    if _squish < 0.01:
+        _squish = 0.0
+    return _hover_scale * (1 - _squish), _squish
+
+
+def _on_click(event):
+    global _squish
+    _squish = 0.25
+
+
+def _bind_click_once(canvas):
+    if not getattr(canvas, "_droplet_click_bound", False):
+        canvas.bind("<Button-1>", _on_click, add="+")
+        canvas._droplet_click_bound = True
+
+
 def draw_idle(canvas, tick, tone_color):
     _clear(canvas)
+    scale, _ = _update_interactivity(canvas)
     bob = math.sin(tick / 18) * 2.5
-    _draw_pet(canvas, CENTER_X, CENTER_Y + bob, "idle", tick)
+    _draw_pet(canvas, CENTER_X, CENTER_Y + bob, "idle", tick, scale)
+    _bind_click_once(canvas)
 
 
 def draw_happy(canvas, tick, tone_color):
     _clear(canvas)
+    scale, _ = _update_interactivity(canvas)
     bounce = abs(math.sin(tick / 7)) * 10
-    _draw_pet(canvas, CENTER_X, CENTER_Y - bounce, "happy", tick)
+    _draw_pet(canvas, CENTER_X, CENTER_Y - bounce, "happy", tick, scale)
+    _bind_click_once(canvas)
 
 
 def draw_angry(canvas, tick, tone_color):
     _clear(canvas)
+    scale, _ = _update_interactivity(canvas)
     shake = math.sin(tick * 0.9) * 3.5
-    _draw_pet(canvas, CENTER_X + shake, CENTER_Y, "angry", tick)
+    _draw_pet(canvas, CENTER_X + shake, CENTER_Y, "angry", tick, scale)
+    _bind_click_once(canvas)
 
 
 def draw_sick(canvas, tick, tone_color):
     _clear(canvas)
+    scale, _ = _update_interactivity(canvas)
     sway = math.sin(tick / 22) * 5
-    _draw_pet(canvas, CENTER_X + sway, CENTER_Y + 4, "sick", tick)
+    _draw_pet(canvas, CENTER_X + sway, CENTER_Y + 4, "sick", tick, scale)
+    _bind_click_once(canvas)

@@ -1,10 +1,5 @@
 """
 pet_widget.py - Floating desktop pet with animated speech bubble + TTS.
-
-Pet design is loaded via the existing registry (src/pets/registry.py),
-driven by ACTIVE_PET in .env - unchanged from v2.2.0/v3.0.0. This stage
-only adds bubble animation (entrance bounce, typing effect, exit shrink)
-and voice playback on top of that existing architecture.
 """
 
 import ctypes
@@ -29,20 +24,15 @@ from src.tts import speak
 
 POLL_INTERVAL_MS = 4000
 ANIMATION_INTERVAL_MS = 33
-BUBBLE_DURATION_MS = 12000
 TYPING_SPEED_MS = 28
 CURSOR_BLINK_MS = 530
+BUBBLE_STAY_AFTER_TYPING_MS = 5000
+BUBBLE_MAX_LIFETIME_MS = 20000
 
 _active_pet_module = get_active_pet_module(ACTIVE_PET)
 
 
 class BubbleWindow:
-    """
-    Animated speech bubble: entrance bounce, character-by-character
-    typing with click sound, blinking cursor once typing completes,
-    voice playback after typing finishes, and an exit shrink animation.
-    """
-
     _BOUNCE_OFFSETS = [28, 20, 12, 5, 0, -3, -1, 0]
 
     def __init__(self, parent_root, pet_widget):
@@ -56,6 +46,7 @@ class BubbleWindow:
         self.mood = "idle"
         self.bw = self.bh = self.ww = self.wh = 0
         self.final_x = self.final_y = 0
+        self._tts_started = False
 
     def _cancel_jobs(self):
         for job in self._jobs:
@@ -78,32 +69,58 @@ class BubbleWindow:
             self.canvas.pack()
         else:
             self.canvas.config(width=width, height=height)
-        self.toplevel.geometry(f"{width}x{height}")
+
+    def _calc_position(self, ww, wh):
+        self.pet_widget.root.update_idletasks()
+        px = self.pet_widget.root.winfo_x()
+        py = self.pet_widget.root.winfo_y()
+        pw = self.pet_widget.root.winfo_width()
+
+        x = px + (pw - ww) // 2
+        y = py - wh + 35
+
+        sw = self.pet_widget.root.winfo_screenwidth()
+        sh = self.pet_widget.root.winfo_screenheight()
+        x = max(10, min(x, sw - ww - 10))
+        y = max(10, min(y, sh - wh - 10))
+        return x, y
+
+    def _move_to(self, x, y, w=None, h=None):
+        w = w or self.ww
+        h = h or self.wh
+        self.toplevel.geometry(f"{w}x{h}+{x}+{y}")
 
     def show(self, text, mood="idle"):
         self._cancel_jobs()
         self.full_text = text
         self.mood = mood
         self.typed_text = ""
+        self._tts_started = False
 
         wrapped, bw, bh, ww, wh = compute_bubble_geometry(text)
         self.bw, self.bh, self.ww, self.wh = bw, bh, ww, wh
 
-        px = self.pet_widget.root.winfo_x()
-        py = self.pet_widget.root.winfo_y()
-        pw = self.pet_widget.root.winfo_width()
-
-        self.final_x = px + (pw - ww) // 2
-        self.final_y = py - wh + 30
+        self.final_x, self.final_y = self._calc_position(ww, wh)
 
         self._ensure_window(ww, wh)
         start_y = self.final_y + self._BOUNCE_OFFSETS[0]
-        self.toplevel.geometry(f"{ww}x{wh}+{self.final_x}+{start_y}")
+        self._move_to(self.final_x, start_y)
         self.toplevel.deiconify()
+
+        job = self.parent.after(BUBBLE_MAX_LIFETIME_MS, self.hide)
+        self._jobs.append(job)
 
         self._animate_entrance(0)
 
+    def sync_position(self):
+        if self.toplevel is None or not self.toplevel.winfo_viewable():
+            return
+        self.final_x, self.final_y = self._calc_position(self.ww, self.wh)
+        self._move_to(self.final_x, self.final_y)
+
     def hide(self):
+        if self.toplevel is None:
+            return
         self._cancel_jobs()
         self._animate_exit(0)
 
@@ -112,33 +129,42 @@ class BubbleWindow:
             self._start_typing()
             return
         y = self.final_y + self._BOUNCE_OFFSETS[frame]
-        self.toplevel.geometry(f"{self.ww}x{self.wh}+{self.final_x}+{y}")
+        self._move_to(self.final_x, y)
         render_bubble(self.canvas, "", self.bw, self.bh, self.mood, False)
         job = self.parent.after(30, lambda: self._animate_entrance(frame + 1))
         self._jobs.append(job)
 
     def _start_typing(self):
+        # Start TTS immediately when bubble appears, alongside typing
+        if not self._tts_started and self.toplevel and self.toplevel.winfo_exists():
+            self._tts_started = True
+            speak(self.full_text, ACTIVE_PET)
         self._type_next(0)
 
     def _type_next(self, index):
         if index > len(self.full_text):
             self._start_cursor_blink()
-            speak(self.full_text, ACTIVE_PET)
+            job = self.parent.after(BUBBLE_STAY_AFTER_TYPING_MS, self.hide)
+            self._jobs.append(job)
             return
+
         self.typed_text = self.full_text[:index]
-        render_bubble(self.canvas, self.typed_text, self.bw, self.bh, self.mood, True)
+        render_bubble(self.canvas, self.typed_text, self.bw, self.bh,
+                      self.mood, True)
         play_typing_click()
-        job = self.parent.after(TYPING_SPEED_MS, lambda: self._type_next(index + 1))
+        job = self.parent.after(TYPING_SPEED_MS,
+                                lambda: self._type_next(index + 1))
         self._jobs.append(job)
 
     def _start_cursor_blink(self):
-        cursor_state = {"on": False}
+        state = {"on": False}
 
         def blink():
             if not self.toplevel or not self.toplevel.winfo_exists():
                 return
-            cursor_state["on"] = not cursor_state["on"]
-            render_bubble(self.canvas, self.typed_text, self.bw, self.bh, self.mood, cursor_state["on"])
+            state["on"] = not state["on"]
+            render_bubble(self.canvas, self.typed_text, self.bw, self.bh,
+                          self.mood, state["on"])
             job = self.parent.after(CURSOR_BLINK_MS, blink)
             self._jobs.append(job)
 
@@ -154,8 +180,7 @@ class BubbleWindow:
         w = max(1, int(self.ww * (1.0 - t * 0.25)))
         h = max(1, int(self.wh * (1.0 - t * 0.25)))
         x = self.final_x + (self.ww - w) // 2
-        self.toplevel.geometry(f"{w}x{h}+{x}+{y}")
-        self.canvas.config(width=w, height=h)
+        self._move_to(x, y, w, h)
         job = self.parent.after(20, lambda: self._animate_exit(frame + 1))
         self._jobs.append(job)
 
@@ -174,7 +199,6 @@ class PetWidget:
         self.last_seen_updated_at = None
         self.current_mood = "idle"
         self.current_tone = "neutral"
-        self.bubble_hide_job = None
         self._drag_start_x = 0
         self._drag_start_y = 0
         self._drag_moved = False
@@ -236,14 +260,8 @@ class PetWidget:
             self._show_bubble(roast_text)
 
     def _show_bubble(self, text):
-        self.bubble.show(text, mood=self.current_mood)
-        if self.bubble_hide_job is not None:
-            self.root.after_cancel(self.bubble_hide_job)
-        self.bubble_hide_job = self.root.after(BUBBLE_DURATION_MS, self._hide_bubble)
-
-    def _hide_bubble(self):
         self.bubble.hide()
-        self.bubble_hide_job = None
+        self.bubble.show(text, mood=self.current_mood)
 
     def _on_press(self, event):
         self._drag_start_x = event.x
@@ -258,6 +276,7 @@ class PetWidget:
         new_x = self.root.winfo_x() + dx
         new_y = self.root.winfo_y() + dy
         self.root.geometry(f"+{new_x}+{new_y}")
+        self.bubble.sync_position()
 
     def _on_release(self, event):
         if not self._drag_moved:
@@ -300,7 +319,8 @@ class PetWidget:
                 text_widget.insert("end", f"{i}. {roast_text}\n\n")
         text_widget.config(state="disabled")
 
-        tk.Button(panel, text="Close", command=lambda: self._close_history_panel(panel)).pack(pady=6)
+        tk.Button(panel, text="Close",
+                  command=lambda: self._close_history_panel(panel)).pack(pady=6)
         self._history_panel = panel
 
     def _close_history_panel(self, panel):

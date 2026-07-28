@@ -1,31 +1,18 @@
 """
 pet_animations.py - Pure drawing logic for the desktop pet.
-
-Single responsibility: given a Tkinter canvas, a mood, a tone bucket, and
-a "tick" (an incrementing frame counter), draw the correct pose. No window
-management, no polling, no file access happens here - this file only
-knows how to draw, nothing about when or why.
-
-Speech bubble drawing is canvas-agnostic: compute_bubble_geometry() figures
-out sizing from the text, render_bubble() draws onto whatever canvas it's
-given (starting at 0,0) - this lets pet_widget.py host the bubble in its
-own dedicated Toplevel window, independent from the pet's canvas.
-
-Swappable later: if real sprite art replaces the procedural pet shapes,
-only the mood-drawing section of this file changes.
 """
 
 import math
+import random
 import textwrap
+import tkinter as tk
 
 CANVAS_SIZE = 280
 CENTER_X = CANVAS_SIZE // 2
 CENTER_Y = CANVAS_SIZE // 2
 BASE_RADIUS = 42
 
-TRANSPARENT_KEY = "#FE01FE"  # unlikely-to-clash magenta, used only as the
-                              # widget's transparent background key - never
-                              # use this exact color for any drawn fill
+TRANSPARENT_KEY = "#FE01FE"
 
 TONE_COLORS = {
     "warm": "#FFD700",
@@ -53,7 +40,34 @@ _active_module = get_active_pet_module(ACTIVE_PET)
 CANVAS_SIZE = getattr(_active_module, "CANVAS_SIZE", 220)
 
 
+# ---------------------------------------------------------------------
+# Gaze state machine: FOLLOW -> REST -> FOLLOW -> REST ...
+# Follow cursor for 2-5s, then rest at center for 3-7s, repeat.
+# Updated ONCE per frame in draw_mood(), not per eye call.
+# ---------------------------------------------------------------------
+_gaze_state = "follow"
+_gaze_timer = 0
+_gaze_next_duration = 120
+
+
+def _update_gaze_state():
+    """Update the gaze state machine. Call once per frame."""
+    global _gaze_state, _gaze_timer, _gaze_next_duration
+    _gaze_timer -= 1
+    if _gaze_timer <= 0:
+        if _gaze_state == "follow":
+            _gaze_state = "rest"
+            _gaze_next_duration = random.randint(90, 210)  # 3-7s
+        else:
+            _gaze_state = "follow"
+            _gaze_next_duration = random.randint(60, 150)  # 2-5s
+        _gaze_timer = _gaze_next_duration
+
+
 def draw_mood(canvas, mood, tick, tone_bucket="neutral"):
+    # Update gaze state once per frame (shared across all eyes)
+    _update_gaze_state()
+
     tone_color = get_tone_color(tone_bucket)
     draw_fn = {
         "happy": _active_module.draw_happy,
@@ -65,9 +79,37 @@ def draw_mood(canvas, mood, tick, tone_bucket="neutral"):
 
 
 # ---------------------------------------------------------------------
-# Speech bubble - canvas-agnostic, hosted in its own Toplevel by
-# pet_widget.py (see BubbleWindow class there). Everything below draws
-# starting at (0,0) of whatever canvas it's given.
+# Universal eye tracker with random gaze behavior
+# ---------------------------------------------------------------------
+
+def track_mouse(canvas, eye_cx, eye_cy, pupil_radius=3, max_offset=4):
+    """
+    Returns (pupil_x, pupil_y) clamped inside the eye so it follows
+    the mouse cursor. Uses gaze state machine for natural feel.
+    """
+    # If in "rest" state, look at center (eye center)
+    if _gaze_state == "rest":
+        return eye_cx, eye_cy
+
+    try:
+        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
+        my = canvas.winfo_pointery() - canvas.winfo_rooty()
+    except tk.TclError:
+        return eye_cx, eye_cy
+
+    dx = mx - eye_cx
+    dy = my - eye_cy
+    dist = math.hypot(dx, dy)
+    if dist == 0:
+        return eye_cx, eye_cy
+
+    offset = min(max_offset, dist / 8)
+    angle = math.atan2(dy, dx)
+    return eye_cx + math.cos(angle) * offset, eye_cy + math.sin(angle) * offset
+
+
+# ---------------------------------------------------------------------
+# Speech bubble
 # ---------------------------------------------------------------------
 
 BUBBLE_PADDING = 16
@@ -90,7 +132,6 @@ MOOD_BORDER_COLORS = {
 
 
 def _round_rect(canvas, x1, y1, x2, y2, radius=14, **kwargs):
-    """Draw a rounded rectangle using a smooth polygon."""
     points = [
         x1 + radius, y1,
         x2 - radius, y1,
@@ -103,36 +144,24 @@ def _round_rect(canvas, x1, y1, x2, y2, radius=14, **kwargs):
         x1, y2,
         x1, y2 - radius,
         x1, y1 + radius,
-        x1, y1
+        x1, y1,
     ]
     return canvas.create_polygon(points, smooth=True, splinesteps=36, **kwargs)
 
 
 def compute_bubble_geometry(text):
-    """
-    Given raw roast text, return (wrapped_text, bubble_width, bubble_height,
-    window_width, window_height). window_width/height include room for the
-    shadow offset and tail - use these to size the hosting Toplevel exactly.
-    """
     wrapped = textwrap.fill(text, width=BUBBLE_WRAP_WIDTH, break_long_words=False)
     lines = wrapped.count("\n") + 1
     bubble_height = max(58, BUBBLE_PADDING * 2 + lines * BUBBLE_LINE_HEIGHT)
     bubble_width = BUBBLE_WIDTH
-
     window_width = bubble_width + BUBBLE_SHADOW_OFFSET + 4
     window_height = bubble_height + BUBBLE_TAIL_HEIGHT + BUBBLE_SHADOW_OFFSET + 4
-
     return wrapped, bubble_width, bubble_height, window_width, window_height
 
 
-def render_bubble(canvas, wrapped_text, bubble_width, bubble_height, mood="idle", show_cursor=False):
-    """
-    Draws the bubble with a dark theme, mood-colored border, and a tail
-    pointing down toward the pet. show_cursor appends a blinking '|' for
-    the typing effect - caller controls the blink timing.
-    """
+def render_bubble(canvas, wrapped_text, bubble_width, bubble_height,
+                  mood="idle", show_cursor=False):
     canvas.delete("bubble")
-
     border = MOOD_BORDER_COLORS.get(mood, MOOD_BORDER_COLORS["idle"])
     x1, y1 = 0, 0
     x2, y2 = bubble_width, bubble_height
@@ -142,26 +171,26 @@ def render_bubble(canvas, wrapped_text, bubble_width, bubble_height, mood="idle"
         x2 + BUBBLE_SHADOW_OFFSET, y2 + BUBBLE_SHADOW_OFFSET,
         radius=BUBBLE_RADIUS, fill="#000000", outline="", tags="bubble"
     )
-
     _round_rect(
         canvas, x1, y1, x2, y2,
-        radius=BUBBLE_RADIUS, fill=BUBBLE_FILL, outline=border, width=2, tags="bubble"
+        radius=BUBBLE_RADIUS, fill=BUBBLE_FILL, outline=border,
+        width=2, tags="bubble"
     )
 
-    tail_cx = bubble_width // 2
+    tcx = bubble_width // 2
     canvas.create_polygon(
-        tail_cx - 10, y2, tail_cx + 10, y2, tail_cx, y2 + BUBBLE_TAIL_HEIGHT,
+        tcx - 10, y2, tcx + 10, y2, tcx, y2 + BUBBLE_TAIL_HEIGHT,
         fill=BUBBLE_FILL, outline=border, width=2, tags="bubble"
     )
     canvas.create_polygon(
-        tail_cx - 8, y2, tail_cx + 8, y2, tail_cx, y2 + BUBBLE_TAIL_HEIGHT - 2,
+        tcx - 8, y2, tcx + 8, y2, tcx, y2 + BUBBLE_TAIL_HEIGHT - 2,
         fill=BUBBLE_FILL, outline="", tags="bubble"
     )
 
-    display_text = wrapped_text + ("|" if show_cursor else "")
+    display = wrapped_text + ("|" if show_cursor else "")
     canvas.create_text(
         bubble_width // 2, bubble_height // 2,
-        text=display_text, width=bubble_width - 28,
+        text=display, width=bubble_width - 28,
         font=BUBBLE_FONT, fill=BUBBLE_TEXT_COLOR, justify="center",
         tags="bubble"
     )

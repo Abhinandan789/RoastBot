@@ -298,7 +298,7 @@ def _on_click(event):
 
 def _bind_click_once(canvas):
     if not getattr(canvas, "_smiley2_click_bound", False):
-        canvas.bind("<Button-1>", _on_click)
+        canvas.bind("<Button-1>", _on_click, add="+")
         canvas._smiley2_click_bound = True
 
 

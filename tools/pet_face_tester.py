@@ -2,10 +2,13 @@
 """
 tools/pet_face_tester.py - Modern dark-themed pet preview grid.
 Responsive: works windowed or fullscreen without breaking layout.
+Auto-discovers pets from src/pets/*.py AND respects PET_REGISTRY.
 """
 import tkinter as tk
 import sys
 import os
+import importlib
+import inspect
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -31,6 +34,41 @@ VOICE_SAMPLES = {
     "robot":   "Beep boop. I'm Robot. Efficiency is my religion. You are... not efficient.",
     "cat":     "Meow. I'm the cat. I judge your commits silently. Harshly.",
 }
+
+
+def _discover_pets():
+    """
+    Auto-discover all pets from src/pets/*.py that implement the four draw_* functions.
+    Merge with PET_REGISTRY so both drop-in (new .py file) and registry-backed pets appear.
+    Returns dict: {pet_key: pet_name}
+    """
+    pets_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "src", "pets")
+    discovered = {}
+
+    # 1. Auto-discover from .py files
+    if os.path.isdir(pets_dir):
+        for fname in sorted(os.listdir(pets_dir)):
+            if not fname.endswith(".py"):
+                continue
+            if fname.startswith("_"):
+                continue
+            key = fname[:-3]  # strip .py
+            # Quick check: does it have draw_idle?
+            try:
+                mod = importlib.import_module(f"src.pets.{key}")
+                if hasattr(mod, "draw_idle"):
+                    discovered[key] = key.title()
+            except Exception:
+                pass
+
+    # 2. Merge with PET_REGISTRY (registry takes precedence for display names)
+    for key, info in PET_REGISTRY.items():
+        if isinstance(info, dict):
+            discovered[key] = info.get("name", key.title())
+        else:
+            discovered[key] = key.title()
+
+    return discovered
 
 
 # ------------------------------------------------------------------
@@ -251,8 +289,9 @@ class PetCard(tk.Frame):
 #  Main App
 # ------------------------------------------------------------------
 def main():
-    if not PET_REGISTRY:
-        print("No pets registered in src/pets/registry.py")
+    ALL_PETS = _discover_pets()
+    if not ALL_PETS:
+        print("No pets found in src/pets/ or PET_REGISTRY")
         return
 
     root = tk.Tk()
@@ -285,7 +324,6 @@ def main():
         lambda e: main_canvas.configure(scrollregion=main_canvas.bbox("all"))
     )
 
-    # Create the inner window — width will be updated dynamically on resize
     inner_window = main_canvas.create_window((0, 0), window=scrollable_frame,
                                              anchor="nw", width=1060)
     main_canvas.configure(yscrollcommand=scrollbar.set)
@@ -298,30 +336,30 @@ def main():
     main_canvas.bind_all("<MouseWheel>", _on_mousewheel)
 
     # ---- Centered grid container ----
-    # Wrap the grid in a frame that fills width and centers its contents
     outer_container = tk.Frame(scrollable_frame, bg="#121212")
     outer_container.pack(fill="x", expand=True, pady=10)
 
-    # Centering helper: a frame that stays centered regardless of parent width
     center_wrapper = tk.Frame(outer_container, bg="#121212")
-    center_wrapper.pack(expand=True)  # expand=True centers it horizontally
+    center_wrapper.pack(expand=True)
 
-    names = list(PET_REGISTRY.keys())
+    names = list(ALL_PETS.keys())
     COLS = 3
     for i, key in enumerate(names):
         row = i // COLS
         col = i % COLS
-        card = PetCard(center_wrapper, key.title(), key)
+        card = PetCard(center_wrapper, ALL_PETS[key], key)
         card.grid(row=row, column=col, padx=14, pady=14, sticky="n")
 
     # Footer
+    auto_count = len([k for k in ALL_PETS if k not in PET_REGISTRY])
+    reg_count = len(PET_REGISTRY)
+    footer_text = f"{len(ALL_PETS)} pets total ({auto_count} auto-discovered, {reg_count} from PET_REGISTRY)"
     tk.Label(scrollable_frame,
-             text="Add a new pet to PET_REGISTRY in src/pets/registry.py → rerun to see it",
+             text=footer_text,
              font=("Segoe UI", 9), fg="#444", bg="#121212").pack(pady=16)
 
     # ---- Responsive: update inner canvas width on resize ----
     def _on_resize(event):
-        # Update the inner window width to match canvas width minus padding
         new_width = max(400, event.width - 40)
         main_canvas.itemconfig(inner_window, width=new_width)
 

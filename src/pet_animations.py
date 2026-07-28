@@ -65,9 +65,8 @@ def draw_mood(canvas, mood, tick, tone_bucket="neutral"):
 
 
 # ---------------------------------------------------------------------
-# Speech bubble - canvas-agnostic, hosted in its own Toplevel by
-# pet_widget.py (see BubbleWindow class there). Everything below draws
-# starting at (0,0) of whatever canvas it's given.
+# Speech bubble — canvas-agnostic, hosted in its own Toplevel by
+# pet_widget.py. Everything below draws starting at (0,0).
 # ---------------------------------------------------------------------
 
 BUBBLE_PADDING = 16
@@ -103,7 +102,7 @@ def _round_rect(canvas, x1, y1, x2, y2, radius=14, **kwargs):
         x1, y2,
         x1, y2 - radius,
         x1, y1 + radius,
-        x1, y1
+        x1, y1,
     ]
     return canvas.create_polygon(points, smooth=True, splinesteps=36, **kwargs)
 
@@ -125,11 +124,11 @@ def compute_bubble_geometry(text):
     return wrapped, bubble_width, bubble_height, window_width, window_height
 
 
-def render_bubble(canvas, wrapped_text, bubble_width, bubble_height, mood="idle", show_cursor=False):
+def render_bubble(canvas, wrapped_text, bubble_width, bubble_height,
+                  mood="idle", show_cursor=False):
     """
-    Draws the bubble with a dark theme, mood-colored border, and a tail
-    pointing down toward the pet. show_cursor appends a blinking '|' for
-    the typing effect - caller controls the blink timing.
+    Dark-theme bubble with mood-colored border and a tail pointing down.
+    show_cursor appends a blinking '|' — caller controls blink timing.
     """
     canvas.delete("bubble")
 
@@ -137,31 +136,37 @@ def render_bubble(canvas, wrapped_text, bubble_width, bubble_height, mood="idle"
     x1, y1 = 0, 0
     x2, y2 = bubble_width, bubble_height
 
+    # Shadow
     _round_rect(
         canvas, x1 + BUBBLE_SHADOW_OFFSET, y1 + BUBBLE_SHADOW_OFFSET,
         x2 + BUBBLE_SHADOW_OFFSET, y2 + BUBBLE_SHADOW_OFFSET,
         radius=BUBBLE_RADIUS, fill="#000000", outline="", tags="bubble"
     )
 
+    # Body
     _round_rect(
         canvas, x1, y1, x2, y2,
-        radius=BUBBLE_RADIUS, fill=BUBBLE_FILL, outline=border, width=2, tags="bubble"
+        radius=BUBBLE_RADIUS, fill=BUBBLE_FILL, outline=border,
+        width=2, tags="bubble"
     )
 
-    tail_cx = bubble_width // 2
+    # Tail (pointing down toward pet)
+    tcx = bubble_width // 2
     canvas.create_polygon(
-        tail_cx - 10, y2, tail_cx + 10, y2, tail_cx, y2 + BUBBLE_TAIL_HEIGHT,
+        tcx - 10, y2, tcx + 10, y2, tcx, y2 + BUBBLE_TAIL_HEIGHT,
         fill=BUBBLE_FILL, outline=border, width=2, tags="bubble"
     )
+    # Inner fill to hide the outline joint
     canvas.create_polygon(
-        tail_cx - 8, y2, tail_cx + 8, y2, tail_cx, y2 + BUBBLE_TAIL_HEIGHT - 2,
+        tcx - 8, y2, tcx + 8, y2, tcx, y2 + BUBBLE_TAIL_HEIGHT - 2,
         fill=BUBBLE_FILL, outline="", tags="bubble"
     )
 
-    display_text = wrapped_text + ("|" if show_cursor else "")
+    # Text + optional cursor
+    display = wrapped_text + ("|" if show_cursor else "")
     canvas.create_text(
         bubble_width // 2, bubble_height // 2,
-        text=display_text, width=bubble_width - 28,
+        text=display, width=bubble_width - 28,
         font=BUBBLE_FONT, fill=BUBBLE_TEXT_COLOR, justify="center",
         tags="bubble"
     )

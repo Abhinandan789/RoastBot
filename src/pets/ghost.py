@@ -85,18 +85,9 @@ def _arms(canvas, cx, cy, mood, tick, scale=1.0):
 
 
 def _track_pupil(canvas, eye_cx, eye_cy, max_off=5):
-    try:
-        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
-        my = canvas.winfo_pointery() - canvas.winfo_rooty()
-    except Exception:
-        return eye_cx, eye_cy
-    dx, dy = mx - eye_cx, my - eye_cy
-    dist = math.hypot(dx, dy)
-    if dist == 0:
-        return eye_cx, eye_cy
-    off = min(max_off, dist / 10)
-    ang = math.atan2(dy, dx)
-    return eye_cx + math.cos(ang) * off, eye_cy + math.sin(ang) * off
+    """Track mouse with random gaze: follow for a bit, then rest at center."""
+    from src.pet_animations import track_mouse
+    return track_mouse(canvas, eye_cx, eye_cy, max_offset=max_off)
 
 
 def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
@@ -147,7 +138,7 @@ def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
             )
         return
 
-    # Normal big cute eyes — with mouse-tracking pupils
+    # Normal big cute eyes — with mouse-tracking pupils (via random gaze)
     for dx in (-14, 14):
         ex = cx + dx * scale
         ey = cy - 6 * scale
@@ -157,7 +148,7 @@ def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
             ex + 8 * scale, ey + 8 * scale,
             fill="white", outline="#222", width=2, tags="pet"
         )
-        # Pupil follows mouse
+        # Pupil follows mouse (with random gaze pauses)
         px, py = _track_pupil(canvas, ex, ey, max_off=5 * scale)
         canvas.create_oval(
             px - 3 * scale, py - 3 * scale,

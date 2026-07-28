@@ -22,9 +22,6 @@ MOOD_SHADE = {
     "sick":  "#94A88E",
 }
 
-# ------------------------------------------------------------------
-#  Interactivity state
-# ------------------------------------------------------------------
 _hover_scale = 1.0
 _squish = 0.0
 
@@ -83,22 +80,11 @@ def _hands(canvas, cx, cy, mood, tick, scale=1.0):
 
 
 def _track_pupil(canvas, eye_cx, eye_cy, max_off=4):
-    try:
-        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
-        my = canvas.winfo_pointery() - canvas.winfo_rooty()
-    except Exception:
-        return eye_cx, eye_cy
-    dx, dy = mx - eye_cx, my - eye_cy
-    dist = math.hypot(dx, dy)
-    if dist == 0:
-        return eye_cx, eye_cy
-    off = min(max_off, dist / 10)
-    ang = math.atan2(dy, dx)
-    return eye_cx + math.cos(ang) * off, eye_cy + math.sin(ang) * off
+    from src.pet_animations import track_mouse
+    return track_mouse(canvas, eye_cx, eye_cy, max_offset=max_off)
 
 
 def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
-    # Random natural blink
     blink = random.random() < 0.005 or (tick % 130 < 5 and random.random() < 0.3)
 
     if blink:
@@ -145,24 +131,20 @@ def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
             )
         return
 
-    # Normal eyes — with mouse-tracking pupils
     for dx in (-16, 16):
         ex = cx + dx * scale
         ey = cy
-        # Sclera
         canvas.create_oval(
             ex - 7 * scale, ey - 10 * scale,
             ex + 7 * scale, ey + 10 * scale,
             fill="white", outline="#3A3A3A", width=1, tags="pet"
         )
-        # Pupil follows mouse
         px, py = _track_pupil(canvas, ex, ey, max_off=4 * scale)
         canvas.create_oval(
             px - 3 * scale, py - 4 * scale,
             px + 1 * scale, py + 2 * scale,
             fill="#1A1A1A", outline="", tags="pet"
         )
-        # Shine
         canvas.create_oval(
             px - 2 * scale, py - 6 * scale,
             px, py - 4 * scale,

@@ -24,10 +24,6 @@ MOOD_GLOW = {
     "sick":  "#B8D4B8",
 }
 
-
-# ------------------------------------------------------------------
-#  Interactivity state (shared across frames)
-# ------------------------------------------------------------------
 _hover_scale = 1.0
 _squish = 0.0
 
@@ -57,8 +53,6 @@ def _shadow(canvas, cx, cy):
 def _body(canvas, cx, cy, mood, scale=1.0):
     fill = MOOD_FILL[mood]
     glow = MOOD_GLOW[mood]
-
-    # Apply hover scale
     w, h = BODY_W * scale, BODY_H * scale
 
     pts = _teardrop_points(cx, cy, w, h)
@@ -72,7 +66,6 @@ def _body(canvas, cx, cy, mood, scale=1.0):
         inner_pts, fill=glow, outline="", smooth=True, tags="pet"
     )
 
-    # Highlight
     canvas.create_oval(
         cx - 18 * scale, cy - 28 * scale, cx + 2 * scale, cy - 8 * scale,
         fill="white", outline="", tags="pet"
@@ -93,22 +86,11 @@ def _feet(canvas, cx, cy, mood, scale=1.0):
 
 
 def _track_pupil(canvas, eye_cx, eye_cy, max_off=4):
-    try:
-        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
-        my = canvas.winfo_pointery() - canvas.winfo_rooty()
-    except Exception:
-        return eye_cx, eye_cy
-    dx, dy = mx - eye_cx, my - eye_cy
-    dist = math.hypot(dx, dy)
-    if dist == 0:
-        return eye_cx, eye_cy
-    off = min(max_off, dist / 10)
-    ang = math.atan2(dy, dx)
-    return eye_cx + math.cos(ang) * off, eye_cy + math.sin(ang) * off
+    from src.pet_animations import track_mouse
+    return track_mouse(canvas, eye_cx, eye_cy, max_offset=max_off)
 
 
 def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
-    # Random natural blink (not rigid modulo)
     blink = random.random() < 0.005 or (tick % 180 < 4 and random.random() < 0.3)
 
     if blink:
@@ -150,20 +132,16 @@ def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
             )
         return
 
-    # Normal eyes — with mouse-tracking pupils
     for dx in (-14, 14):
-        # Sclera
         canvas.create_oval(
             cx + dx - 6, cy - 8, cx + dx + 6, cy + 8,
             fill="white", outline="#3A3A3A", width=1, tags="pet"
         )
-        # Pupil follows mouse
         px, py = _track_pupil(canvas, cx + dx, cy)
         canvas.create_oval(
             px - 3, py - 4, px + 1, py + 2,
             fill="#1A1A1A", outline="", tags="pet"
         )
-        # Shine
         canvas.create_oval(
             px - 2, py - 6, px, py - 4,
             fill="white", outline="", tags="pet"
@@ -263,9 +241,7 @@ def _draw_pet(canvas, cx, cy, mood, tick, scale=1.0):
 
 
 def _update_interactivity(canvas):
-    """Check hover/click on canvas to drive scale and squish."""
     global _hover_scale, _squish
-
     try:
         mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
         my = canvas.winfo_pointery() - canvas.winfo_rooty()
@@ -273,21 +249,17 @@ def _update_interactivity(canvas):
     except Exception:
         in_bounds = False
 
-    # Smooth hover scale
     target = 1.08 if in_bounds else 1.0
     _hover_scale += (target - _hover_scale) * 0.15
-
-    # Decay squish
     _squish *= 0.85
     if _squish < 0.01:
         _squish = 0.0
-
     return _hover_scale * (1 - _squish), _squish
 
 
 def _on_click(event):
     global _squish
-    _squish = 0.25  # 25% squish on click
+    _squish = 0.25
 
 
 def _bind_click_once(canvas):

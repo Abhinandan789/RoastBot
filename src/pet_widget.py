@@ -46,6 +46,7 @@ class BubbleWindow:
         self.mood = "idle"
         self.bw = self.bh = self.ww = self.wh = 0
         self.final_x = self.final_y = 0
+        self._tts_started = False
 
     def _cancel_jobs(self):
         for job in self._jobs:
@@ -89,12 +90,12 @@ class BubbleWindow:
         h = h or self.wh
         self.toplevel.geometry(f"{w}x{h}+{x}+{y}")
 
-    # -----------------------------------------------------------------
     def show(self, text, mood="idle"):
         self._cancel_jobs()
         self.full_text = text
         self.mood = mood
         self.typed_text = ""
+        self._tts_started = False
 
         wrapped, bw, bh, ww, wh = compute_bubble_geometry(text)
         self.bw, self.bh, self.ww, self.wh = bw, bh, ww, wh
@@ -118,13 +119,11 @@ class BubbleWindow:
         self._move_to(self.final_x, self.final_y)
 
     def hide(self):
-        """Safe hide — no-op if bubble was never created."""
         if self.toplevel is None:
             return
         self._cancel_jobs()
         self._animate_exit(0)
 
-    # -----------------------------------------------------------------
     def _animate_entrance(self, frame):
         if frame >= len(self._BOUNCE_OFFSETS):
             self._start_typing()
@@ -136,12 +135,15 @@ class BubbleWindow:
         self._jobs.append(job)
 
     def _start_typing(self):
+        # Start TTS immediately when bubble appears, alongside typing
+        if not self._tts_started and self.toplevel and self.toplevel.winfo_exists():
+            self._tts_started = True
+            speak(self.full_text, ACTIVE_PET)
         self._type_next(0)
 
     def _type_next(self, index):
         if index > len(self.full_text):
             self._start_cursor_blink()
-            speak(self.full_text, ACTIVE_PET)
             job = self.parent.after(BUBBLE_STAY_AFTER_TYPING_MS, self.hide)
             self._jobs.append(job)
             return
@@ -190,7 +192,6 @@ class BubbleWindow:
             self.canvas = None
 
 
-# ---------------------------------------------------------------------
 class PetWidget:
     def __init__(self, root):
         self.root = root
@@ -231,7 +232,6 @@ class PetWidget:
         self.canvas.bind("<B1-Motion>", self._on_drag)
         self.canvas.bind("<ButtonRelease-1>", self._on_release)
 
-    # -----------------------------------------------------------------
     def _animation_loop(self):
         draw_mood(self.canvas, self.current_mood, self.tick, self.current_tone)
         self.tick += 1
@@ -260,11 +260,9 @@ class PetWidget:
             self._show_bubble(roast_text)
 
     def _show_bubble(self, text):
-        # If a bubble is already showing, hide it cleanly first
         self.bubble.hide()
         self.bubble.show(text, mood=self.current_mood)
 
-    # -----------------------------------------------------------------
     def _on_press(self, event):
         self._drag_start_x = event.x
         self._drag_start_y = event.y
@@ -288,7 +286,6 @@ class PetWidget:
         self.bubble.destroy()
         self.root.destroy()
 
-    # -----------------------------------------------------------------
     def _open_history_panel(self):
         if self._history_panel is not None and self._history_panel.winfo_exists():
             self._history_panel.lift()

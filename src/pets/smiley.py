@@ -15,9 +15,6 @@ MOOD_FILL_COLORS = {
     "idle": "#E8D8C0"
 }
 
-# ------------------------------------------------------------------
-#  Interactivity state
-# ------------------------------------------------------------------
 _hover_scale = 1.0
 _squish = 0.0
 
@@ -55,18 +52,8 @@ def _bind_click_once(canvas):
 
 
 def _track_eye(canvas, eye_cx, eye_cy, max_off=2):
-    try:
-        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
-        my = canvas.winfo_pointery() - canvas.winfo_rooty()
-    except Exception:
-        return eye_cx, eye_cy
-    dx, dy = mx - eye_cx, my - eye_cy
-    dist = math.hypot(dx, dy)
-    if dist == 0:
-        return eye_cx, eye_cy
-    off = min(max_off, dist / 12)
-    ang = math.atan2(dy, dx)
-    return eye_cx + math.cos(ang) * off, eye_cy + math.sin(ang) * off
+    from src.pet_animations import track_mouse
+    return track_mouse(canvas, eye_cx, eye_cy, max_offset=max_off)
 
 
 def draw_idle(canvas, tick, tone_color):
@@ -82,7 +69,6 @@ def draw_idle(canvas, tick, tone_color):
         fill=MOOD_FILL_COLORS["idle"], outline=tone_color, width=3, tags="pet"
     )
 
-    # Random natural blink
     blink = random.random() < 0.005 or (tick % 140 < 4 and random.random() < 0.3)
     eye_h = 3 if blink else 8 * scale
 

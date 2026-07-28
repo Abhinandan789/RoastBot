@@ -15,15 +15,16 @@ PET_VOICE = {
     "ghost":   {"rate": 130, "vol": 0.85},
     "robot":   {"rate": 205, "vol": 0.9},
     "cat":     {"rate": 175, "vol": 0.9},
+    "smiley2": {"rate": 165, "vol": 0.9},
 }
 
-# Edge-tts voice mapping (Microsoft neural voices — free via Edge)
 EDGE_VOICES = {
     "droplet": "en-US-AnaNeural",
     "smiley":  "en-US-JennyNeural",
     "ghost":   "en-US-SteffanNeural",
     "robot":   "en-US-GuyNeural",
     "cat":     "en-US-AriaNeural",
+    "smiley2": "en-US-JennyNeural",
 }
 
 _engine = None
@@ -39,28 +40,31 @@ def _get_engine():
 
 
 def _speak_pyttsx3(text, pet_name):
-    """Offline robotic voice. No files, no internet, no popups."""
+    """Offline robotic voice."""
+    print(f"[TTS] pyttsx3 speaking for {pet_name}: {text[:60]}...")
     with _lock:
-        engine = _get_engine()
-        cfg = PET_VOICE.get(pet_name, PET_VOICE["droplet"])
-        engine.setProperty("rate", cfg["rate"])
-        engine.setProperty("volume", cfg["vol"])
+        try:
+            engine = _get_engine()
+            cfg = PET_VOICE.get(pet_name, PET_VOICE["droplet"])
+            engine.setProperty("rate", cfg["rate"])
+            engine.setProperty("volume", cfg["vol"])
 
-        for voice in engine.getProperty("voices"):
-            vname = voice.name.lower()
-            if "zira" in vname or "hazel" in vname or "natural" in vname:
-                engine.setProperty("voice", voice.id)
-                break
+            for voice in engine.getProperty("voices"):
+                vname = voice.name.lower()
+                if "zira" in vname or "hazel" in vname or "natural" in vname:
+                    engine.setProperty("voice", voice.id)
+                    break
 
-        engine.say(text)
-        engine.runAndWait()
+            engine.say(text)
+            engine.runAndWait()
+            print("[TTS] pyttsx3 finished.")
+        except Exception as e:
+            print(f"[TTS] pyttsx3 ERROR: {e}")
 
 
 def _speak_edge_tts(text, pet_name):
-    """
-    Natural neural voice via Microsoft Edge (free).
-    Generates MP3, plays it invisibly via playsound, then deletes it.
-    """
+    """Natural neural voice via Microsoft Edge (free)."""
+    print(f"[TTS] edge-tts speaking for {pet_name}: {text[:60]}...")
     try:
         import edge_tts
         from playsound import playsound
@@ -76,26 +80,26 @@ def _speak_edge_tts(text, pet_name):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as f:
             mp3_path = f.name
         await communicate.save(mp3_path)
-
-        # Play invisibly — playsound uses Windows MCI, no window popup
         try:
             playsound(mp3_path)
+            print("[TTS] edge-tts finished.")
         except Exception as e:
             print(f"[TTS] playsound failed: {e}")
-            # Last resort: open with default player (may show window)
             os.startfile(mp3_path)
-
-        # Cleanup
         try:
             os.remove(mp3_path)
         except OSError:
             pass
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    except Exception as e:
+        print(f"[TTS] edge-tts ERROR: {e}")
 
 
 def speak(text: str, pet_name: str = "droplet"):
     if not ENABLE_TTS:
+        print("[TTS] Disabled via ENABLE_TTS env var.")
         return
 
     def _run():

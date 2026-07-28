@@ -163,18 +163,9 @@ def _muzzle(canvas, x, y, scale=1.0):
 
 
 def _track_pupil(canvas, eye_cx, eye_cy, max_off=4):
-    try:
-        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
-        my = canvas.winfo_pointery() - canvas.winfo_rooty()
-    except Exception:
-        return eye_cx, eye_cy
-    dx, dy = mx - eye_cx, my - eye_cy
-    dist = math.hypot(dx, dy)
-    if dist == 0:
-        return eye_cx, eye_cy
-    off = min(max_off, dist / 10)
-    ang = math.atan2(dy, dx)
-    return eye_cx + math.cos(ang) * off, eye_cy + math.sin(ang) * off
+    """Track mouse with random gaze: follow for a bit, then rest at center."""
+    from src.pet_animations import track_mouse
+    return track_mouse(canvas, eye_cx, eye_cy, max_offset=max_off)
 
 
 def _eyes(canvas, x, y, mood, tick, scale=1.0):
@@ -229,7 +220,7 @@ def _eyes(canvas, x, y, mood, tick, scale=1.0):
             )
         return
 
-    # Normal eyes — with mouse-tracking pupil slit + shifting shine
+    # Normal eyes — with mouse-tracking pupil slit + shifting shine (random gaze)
     for dx in (-18, 18):
         ex = x + dx * scale
         ey = y
@@ -239,7 +230,7 @@ def _eyes(canvas, x, y, mood, tick, scale=1.0):
             ex + 7 * scale, ey + 10 * scale,
             fill=COLORS["eye"], outline="", tags="pet"
         )
-        # Vertical pupil slit that tracks mouse
+        # Vertical pupil slit that tracks mouse (with random gaze pauses)
         px, py = _track_pupil(canvas, ex, ey, max_off=3 * scale)
         canvas.create_oval(
             px - 1.5 * scale, py - 5 * scale,

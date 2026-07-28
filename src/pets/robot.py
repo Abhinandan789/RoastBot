@@ -96,19 +96,9 @@ def _head(canvas, cx, cy, mood, scale=1.0):
 
 
 def _track_led(canvas, led_cx, led_cy, max_off=2):
-    """Robot LED eyes track the mouse with a subtle shift."""
-    try:
-        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
-        my = canvas.winfo_pointery() - canvas.winfo_rooty()
-    except Exception:
-        return led_cx, led_cy
-    dx, dy = mx - led_cx, my - led_cy
-    dist = math.hypot(dx, dy)
-    if dist == 0:
-        return led_cx, led_cy
-    off = min(max_off, dist / 15)
-    ang = math.atan2(dy, dx)
-    return led_cx + math.cos(ang) * off, led_cy + math.sin(ang) * off
+    """Robot LED eyes track the mouse with a subtle shift (random gaze)."""
+    from src.pet_animations import track_mouse
+    return track_mouse(canvas, led_cx, led_cy, max_offset=max_off)
 
 
 def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
@@ -171,7 +161,7 @@ def _eyes(canvas, cx, cy, mood, tick, scale=1.0):
             )
         return
 
-    # Normal LED eyes — track mouse subtly
+    # Normal LED eyes — track mouse subtly (with random gaze pauses)
     for dx in (-10, 10):
         led_cx = cx + dx * scale
         led_cy = cy - 21 * scale

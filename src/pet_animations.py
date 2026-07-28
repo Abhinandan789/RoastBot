@@ -17,6 +17,7 @@ only the mood-drawing section of this file changes.
 
 import math
 import textwrap
+import tkinter as tk
 
 CANVAS_SIZE = 280
 CENTER_X = CANVAS_SIZE // 2
@@ -62,6 +63,33 @@ def draw_mood(canvas, mood, tick, tone_bucket="neutral"):
         "idle": _active_module.draw_idle,
     }.get(mood, _active_module.draw_idle)
     draw_fn(canvas, tick, tone_color)
+
+
+# ---------------------------------------------------------------------
+# Universal eye tracker - any pet can call this
+# ---------------------------------------------------------------------
+
+def track_mouse(canvas, eye_cx, eye_cy, pupil_radius=3, max_offset=4):
+    """
+    Returns (pupil_x, pupil_y) clamped inside the eye so it follows
+    the mouse cursor. Call this inside your draw loop.
+    """
+    try:
+        mx = canvas.winfo_pointerx() - canvas.winfo_rootx()
+        my = canvas.winfo_pointery() - canvas.winfo_rooty()
+    except tk.TclError:
+        return eye_cx, eye_cy
+
+    dx = mx - eye_cx
+    dy = my - eye_cy
+    dist = math.hypot(dx, dy)
+    if dist == 0:
+        return eye_cx, eye_cy
+
+    # Clamp pupil inside eye
+    offset = min(max_offset, dist / 8)
+    angle = math.atan2(dy, dx)
+    return eye_cx + math.cos(angle) * offset, eye_cy + math.sin(angle) * offset
 
 
 # ---------------------------------------------------------------------

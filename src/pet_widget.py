@@ -10,6 +10,7 @@ except Exception:
 
 import json
 import os
+import time
 import tkinter as tk
 
 from src.config import PET_STATE_FILE, ACTIVE_PET
@@ -21,6 +22,7 @@ from src.pet_animations import (
 from src.db import get_recent_roasts
 from src.sounds import play_typing_click
 from src.tts import speak
+from src.scheduler import start_background_scheduler
 
 POLL_INTERVAL_MS = 4000
 ANIMATION_INTERVAL_MS = 33
@@ -91,6 +93,11 @@ class BubbleWindow:
         self.toplevel.geometry(f"{w}x{h}+{x}+{y}")
 
     def show(self, text, mood="idle"):
+        # === DEDUP: don't restart if same text is already showing ===
+        if (self.toplevel is not None
+                and self.toplevel.winfo_viewable()
+                and self.full_text == text):
+            return
         self._cancel_jobs()
         self.full_text = text
         self.mood = mood
@@ -135,7 +142,6 @@ class BubbleWindow:
         self._jobs.append(job)
 
     def _start_typing(self):
-        # Start TTS immediately when bubble appears, alongside typing
         if not self._tts_started and self.toplevel and self.toplevel.winfo_exists():
             self._tts_started = True
             speak(self.full_text, ACTIVE_PET)
@@ -191,6 +197,27 @@ class BubbleWindow:
             self.toplevel = None
             self.canvas = None
 
+    def _prime_pet_state(self):
+        """
+        Snapshot whatever pet_state.json already exists on disk at launch
+        as 'already seen', without popping a bubble for it. Without this,
+        the stale roast from your last session gets replayed as a bubble
+        immediately on startup, right before the freshly-triggered
+        scheduler run finishes and writes a second, near-identical
+        update - which is why the same roast + speech fired twice back
+        to back on every launch.
+        """
+        if not os.path.exists(PET_STATE_FILE):
+            return
+        try:
+            with open(PET_STATE_FILE) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return
+        self.last_seen_updated_at = data.get("updated_at")
+        self.current_mood = data.get("mood", "idle")
+        self.current_tone = data.get("tone_bucket", "neutral")
+
 
 class PetWidget:
     def __init__(self, root):
@@ -203,11 +230,16 @@ class PetWidget:
         self._drag_start_y = 0
         self._drag_moved = False
         self._history_panel = None
+        self._last_shown_roast = None
+        self._last_shown_time = 0
 
         self.bubble = BubbleWindow(self.root, self)
 
         self._setup_window()
         self._setup_canvas()
+
+        self._prime_pet_state()
+        start_background_scheduler()
 
         self._animation_loop()
         self._poll_loop()
@@ -241,6 +273,25 @@ class PetWidget:
         self._check_pet_state()
         self.root.after(POLL_INTERVAL_MS, self._poll_loop)
 
+    def _prime_pet_state(self):
+        # ""Snapshot whatever pet_state.json already exists on disk at launch
+        # as 'already seen', without popping a bubble for it. Without this,
+        # the stale roast from your last session gets replayed as a bubble
+        # immediately on startup, right before the freshly-triggered
+        # scheduler run finishes and writes a second, near-identical
+        # update - which is why the same roast + speech fired twice back
+        # to back on every launch.
+        if not os.path.exists(PET_STATE_FILE):
+            return
+        try:
+            with open(PET_STATE_FILE) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            return
+        self.last_seen_updated_at = data.get("updated_at")
+        self.current_mood = data.get("mood", "idle")
+        self.current_tone = data.get("tone_bucket", "neutral")
+
     def _check_pet_state(self):
         if not os.path.exists(PET_STATE_FILE):
             return
@@ -255,8 +306,16 @@ class PetWidget:
         self.current_tone = data.get("tone_bucket", "neutral")
 
         if updated_at and updated_at != self.last_seen_updated_at:
-            self.last_seen_updated_at = updated_at
             roast_text = data.get("latest_roast", "")
+            self.last_seen_updated_at = updated_at
+
+            # Deduplicate: same roast text within 30s = don't re-show
+            now = time.time()
+            if self._last_shown_roast == roast_text and now - self._last_shown_time < 30:
+                return
+
+            self._last_shown_roast = roast_text
+            self._last_shown_time = now
             self._show_bubble(roast_text)
 
     def _show_bubble(self, text):

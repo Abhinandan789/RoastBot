@@ -5,6 +5,7 @@ import sys
 import threading
 import tempfile
 import asyncio
+import time
 
 ENABLE_TTS = os.environ.get("ENABLE_TTS", "true").lower() == "true"
 TTS_BACKEND = os.environ.get("TTS_BACKEND", "pyttsx3")
@@ -29,7 +30,20 @@ EDGE_VOICES = {
 
 _engine = None
 _lock = threading.Lock()
+_last_spoken = {"text": None, "time": 0}
 
+_speaking = {"active": False}
+_speaking_lock = threading.Lock()
+
+
+def is_speaking():
+    with _speaking_lock:
+        return _speaking["active"]
+
+
+def _set_speaking(value):
+    with _speaking_lock:
+        _speaking["active"] = value
 
 def _get_engine():
     global _engine
@@ -102,7 +116,17 @@ def speak(text: str, pet_name: str = "droplet"):
         print("[TTS] Disabled via ENABLE_TTS env var.")
         return
 
+    # Deduplicate: don't re-speak the same text within 5 seconds
+    now = time.time()
+    with _lock:
+        if text == _last_spoken["text"] and now - _last_spoken["time"] < 5:
+            print(f"[TTS] Skipping duplicate speech: {text[:60]}...")
+            return
+        _last_spoken["text"] = text
+        _last_spoken["time"] = now
+
     def _run():
+        _set_speaking(True)
         try:
             if TTS_BACKEND == "edge-tts":
                 _speak_edge_tts(text, pet_name)
@@ -110,5 +134,7 @@ def speak(text: str, pet_name: str = "droplet"):
                 _speak_pyttsx3(text, pet_name)
         except Exception as e:
             print(f"[TTS] Error: {e}")
-
+        finally:
+            _set_speaking(False)
+    
     threading.Thread(target=_run, daemon=True).start()

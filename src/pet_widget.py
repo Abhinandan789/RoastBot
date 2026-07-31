@@ -10,6 +10,7 @@ except Exception:
 
 import json
 import os
+import time
 import tkinter as tk
 
 from src.config import PET_STATE_FILE, ACTIVE_PET
@@ -21,6 +22,7 @@ from src.pet_animations import (
 from src.db import get_recent_roasts
 from src.sounds import play_typing_click
 from src.tts import speak
+from src.scheduler import start_background_scheduler
 
 POLL_INTERVAL_MS = 4000
 ANIMATION_INTERVAL_MS = 33
@@ -202,9 +204,13 @@ class PetWidget:
         self._drag_start_x = 0
         self._drag_start_y = 0
         self._drag_moved = False
-        self._history_panel = None
+        self._history_panel = True
+        self._last_shown_roast = None
+        self._last_shown_time = 0
 
         self.bubble = BubbleWindow(self.root, self)
+
+        start_background_scheduler()
 
         self._setup_window()
         self._setup_canvas()
@@ -241,8 +247,8 @@ class PetWidget:
         self._check_pet_state()
         self.root.after(POLL_INTERVAL_MS, self._poll_loop)
 
-    def _check_pet_state(self):
-        if not os.path.exists(PET_STATE_FILE):
+        def _check_pet_state(self):
+         if not os.path.exists(PET_STATE_FILE):
             return
         try:
             with open(PET_STATE_FILE) as f:
@@ -255,8 +261,16 @@ class PetWidget:
         self.current_tone = data.get("tone_bucket", "neutral")
 
         if updated_at and updated_at != self.last_seen_updated_at:
-            self.last_seen_updated_at = updated_at
             roast_text = data.get("latest_roast", "")
+            self.last_seen_updated_at = updated_at
+
+            # Deduplicate: same roast text within 30s = same roast, don't re-show
+            now = time.time()
+            if self._last_shown_roast == roast_text and now - self._last_shown_time < 30:
+                return
+
+            self._last_shown_roast = roast_text
+            self._last_shown_time = now
             self._show_bubble(roast_text)
 
     def _show_bubble(self, text):

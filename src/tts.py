@@ -32,7 +32,18 @@ _engine = None
 _lock = threading.Lock()
 _last_spoken = {"text": None, "time": 0}
 
+_speaking = {"active": False}
+_speaking_lock = threading.Lock()
 
+
+def is_speaking():
+    with _speaking_lock:
+        return _speaking["active"]
+
+
+def _set_speaking(value):
+    with _speaking_lock:
+        _speaking["active"] = value
 
 def _get_engine():
     global _engine
@@ -115,6 +126,7 @@ def speak(text: str, pet_name: str = "droplet"):
         _last_spoken["time"] = now
 
     def _run():
+        _set_speaking(True)
         try:
             if TTS_BACKEND == "edge-tts":
                 _speak_edge_tts(text, pet_name)
@@ -122,5 +134,7 @@ def speak(text: str, pet_name: str = "droplet"):
                 _speak_pyttsx3(text, pet_name)
         except Exception as e:
             print(f"[TTS] Error: {e}")
-
+        finally:
+            _set_speaking(False)
+    
     threading.Thread(target=_run, daemon=True).start()
